@@ -7,11 +7,14 @@ import (
 type Algorithm uint
 
 const (
-	Ed25519 Algorithm = iota
+	Ed25519 Algorithm = 1 + iota
 	ECDSA_P256
 	ECDSA_P384
 	ECDSA_P521
 	ECDSA_Secp256k1
+	ECDSA_BrainpoolP256r1
+	ECDSA_BrainpoolP384r1
+	ECDSA_BrainpoolP512r1
 	BLS12_381_MinPK
 	BLS12_381_MinSig
 )
@@ -21,17 +24,23 @@ func (a Algorithm) String() string {
 	case Ed25519:
 		return "Ed25519"
 	case ECDSA_P256:
-		return "ECDSA_P256"
+		return "ECDSA P-256"
 	case ECDSA_P384:
-		return "ECDSA_P384"
+		return "ECDSA P-384"
 	case ECDSA_P521:
-		return "ECDSA_P521"
+		return "ECDSA P-521"
 	case ECDSA_Secp256k1:
-		return "ECDSA_Secp256k1"
+		return "ECDSA Secp256k1"
+	case ECDSA_BrainpoolP256r1:
+		return "ECDSA BrainpoolP256r1"
+	case ECDSA_BrainpoolP384r1:
+		return "ECDSA BrainpoolP384r1"
+	case ECDSA_BrainpoolP512r1:
+		return "ECDSA BrainpoolP512r1"
 	case BLS12_381_MinPK:
-		return "BLS12_381_MinPK"
+		return "BLS12_381 MinPK"
 	case BLS12_381_MinSig:
-		return "BLS12_381_MinSig"
+		return "BLS12_381 MinSig"
 	default:
 		return "Unknown"
 	}

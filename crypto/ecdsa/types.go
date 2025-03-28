@@ -1,0 +1,183 @@
+package ecdsa
+
+import (
+	"errors"
+	"fmt"
+	"math/big"
+
+	"github.com/signatory-io/signatory-core/crypto"
+	"golang.org/x/crypto/cryptobyte"
+	"golang.org/x/crypto/cryptobyte/asn1"
+)
+
+type PublicKey struct {
+	Curve Curve
+	X, Y  *big.Int
+}
+
+// Bytes returns compressed point
+func (p *PublicKey) Bytes() []byte {
+	sz := p.Curve.FieldBytes()
+	if sz == 0 {
+		panic("unknown field size")
+	}
+	out := make([]byte, sz+1)
+	out[0] = byte(p.Y.Bit(0)) | 2
+	p.X.FillBytes(out[1:])
+	return out
+}
+
+// UncompressedBytes returns uncompressed point
+func (p *PublicKey) UncompressedBytes() []byte {
+	sz := p.Curve.FieldBytes()
+	if sz == 0 {
+		panic("unknown field size")
+	}
+	out := make([]byte, sz*2+1)
+	out[0] = 4
+	p.X.FillBytes(out[1 : 1+sz])
+	p.Y.FillBytes(out[1+sz:])
+	return out
+}
+
+func (p *PublicKey) KeyType() crypto.Algorithm {
+	return p.Curve.Algorithm()
+}
+
+var ErrInvalidPublicKey = errors.New("invalid public key")
+
+func PublicKeyFromBytes(data []byte, curve Curve) (*PublicKey, error) {
+	x, y, err := unmarshalCompressed(data, curve)
+	if err != nil {
+		return nil, err
+	}
+	return &PublicKey{
+		Curve: curve,
+		X:     x,
+		Y:     y,
+	}, nil
+}
+
+func PublicKeyFromUncompressed(data []byte, curve Curve) (*PublicKey, error) {
+	sz := curve.FieldBytes()
+	if len(data) != 1+2*sz {
+		return nil, ErrInvalidPublicKey
+	}
+	if data[0] != 4 { // uncompressed form
+		return nil, ErrInvalidPublicKey
+	}
+	p := curve.P()
+	x := new(big.Int).SetBytes(data[1 : 1+sz])
+	y := new(big.Int).SetBytes(data[1+sz:])
+	if x.Cmp(p) >= 0 || y.Cmp(p) >= 0 {
+		return nil, ErrInvalidPublicKey
+	}
+	if !curve.isOnCurve(x, y) {
+		return nil, ErrInvalidPublicKey
+	}
+	return &PublicKey{
+		X:     x,
+		Y:     y,
+		Curve: curve,
+	}, nil
+}
+
+type Signature struct {
+	Curve Curve
+	R, S  *big.Int
+	HasV  bool
+	V     uint8
+}
+
+// Bytes returns a raw 2*FieldBytes long signature
+func (s *Signature) Bytes() []byte {
+	sz := s.Curve.FieldBytes()
+	if sz == 0 {
+		panic("unknown field size")
+	}
+	out := make([]byte, sz*2)
+	s.R.FillBytes(out[:sz])
+	s.S.FillBytes(out[sz:])
+	return out
+}
+
+// RecoverableBytes returns the signature in [R | S | V] form
+func (s *Signature) RecoverableBytes() ([]byte, error) {
+	sz := s.Curve.FieldBytes()
+	if sz == 0 {
+		return nil, errors.New("unknown field size")
+	}
+	if !s.HasV {
+		return nil, errors.New("the signature has no recovery id")
+	}
+	out := make([]byte, sz*2+1)
+	s.R.FillBytes(out[:sz])
+	s.S.FillBytes(out[sz : sz*2])
+	out[sz*2] = s.V
+	return out, nil
+}
+
+func (s *Signature) DERBytes() []byte {
+	var out cryptobyte.Builder
+	out.AddASN1(asn1.SEQUENCE, func(child *cryptobyte.Builder) {
+		child.AddASN1BigInt(s.R)
+		child.AddASN1BigInt(s.S)
+	})
+	return out.BytesOrPanic()
+}
+
+func SignatureFromBytes(data []byte, curve Curve) (*Signature, error) {
+	sz := curve.FieldBytes()
+	if len(data) != sz*2 {
+		return nil, fmt.Errorf("unexpected signature length: %d", len(data))
+	}
+	var (
+		r, s big.Int
+	)
+	r.SetBytes(data[:sz])
+	s.SetBytes(data[sz:])
+	return &Signature{R: &r, S: &s, Curve: curve}, nil
+}
+
+func SignatureFromDERBytes(data []byte, curve Curve) (*Signature, error) {
+	var (
+		seq  cryptobyte.String
+		r, s big.Int
+	)
+	input := cryptobyte.String(data)
+	if !input.ReadASN1(&seq, asn1.SEQUENCE) ||
+		!input.Empty() ||
+		!seq.ReadASN1Integer(&r) ||
+		!seq.ReadASN1Integer(&s) ||
+		!seq.Empty() {
+		return nil, errors.New("invalid ASN.1 signature")
+	}
+	return &Signature{R: &r, S: &s, Curve: curve}, nil
+}
+
+// this is a curve agnostic version for polynomials with any A, not just -3 mod p
+func unmarshalCompressed(data []byte, curve Curve) (x, y *big.Int, err error) {
+	byteLen := curve.FieldBytes()
+	if len(data) != 1+byteLen {
+		return nil, nil, ErrInvalidPublicKey
+	}
+	if data[0] != 2 && data[0] != 3 { // compressed form
+		return nil, nil, ErrInvalidPublicKey
+	}
+	p := curve.P()
+	x = new(big.Int).SetBytes(data[1:])
+	if x.Cmp(p) >= 0 {
+		return nil, nil, ErrInvalidPublicKey
+	}
+
+	y = curve.YSquare(x)
+	y.ModSqrt(y, p)
+
+	if y == nil {
+		return nil, nil, ErrInvalidPublicKey
+	}
+	if byte(y.Bit(0)) != data[0]&1 {
+		y.Neg(y).Mod(y, p)
+	}
+	return
+}
