@@ -26,7 +26,7 @@ type KeyReference interface {
 }
 
 type Vault interface {
-	List(ctx context.Context) KeyIterator
+	List(ctx context.Context, filter []crypto.Algorithm) KeyIterator
 	Close(ctx context.Context) error
 	Ready(ctx context.Context) (bool, error)
 	Name() string

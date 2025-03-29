@@ -10,6 +10,13 @@ import (
 	"golang.org/x/crypto/cryptobyte/asn1"
 )
 
+type Options struct {
+	Hash                 crypto.Hash
+	GenerateRecoveryCode bool
+}
+
+func (o *Options) HashFunc() crypto.Hash { return o.Hash }
+
 type PublicKey struct {
 	Curve Curve
 	X, Y  *big.Int
@@ -83,10 +90,10 @@ func PublicKeyFromUncompressed(data []byte, curve Curve) (*PublicKey, error) {
 }
 
 type Signature struct {
-	Curve Curve
-	R, S  *big.Int
-	HasV  bool
-	V     uint8
+	Curve           Curve
+	R, S            *big.Int
+	HasRecoveryCode bool
+	RecoveryCode    uint8
 }
 
 // Bytes returns a raw 2*FieldBytes long signature
@@ -99,22 +106,6 @@ func (s *Signature) Bytes() []byte {
 	s.R.FillBytes(out[:sz])
 	s.S.FillBytes(out[sz:])
 	return out
-}
-
-// RecoverableBytes returns the signature in [R | S | V] form
-func (s *Signature) RecoverableBytes() ([]byte, error) {
-	sz := s.Curve.FieldBytes()
-	if sz == 0 {
-		return nil, errors.New("unknown field size")
-	}
-	if !s.HasV {
-		return nil, errors.New("the signature has no recovery id")
-	}
-	out := make([]byte, sz*2+1)
-	s.R.FillBytes(out[:sz])
-	s.S.FillBytes(out[sz : sz*2])
-	out[sz*2] = s.V
-	return out, nil
 }
 
 func (s *Signature) DERBytes() []byte {

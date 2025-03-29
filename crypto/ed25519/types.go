@@ -4,12 +4,17 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 )
 
-type Signature []byte
+const (
+	PublicKeySize = 32
+	SignatureSize = 64
+)
 
-func (s Signature) SignatureAlgorithm() crypto.Algorithm { return crypto.Ed25519 }
-func (s Signature) Bytes() []byte                        { return s }
+type Signature [SignatureSize]byte
 
-type PublicKey []byte
+func (s *Signature) SignatureAlgorithm() crypto.Algorithm { return crypto.Ed25519 }
+func (s *Signature) Bytes() []byte                        { return s[:] }
 
-func (p PublicKey) KeyType() crypto.Algorithm { return crypto.Ed25519 }
-func (p PublicKey) Bytes() []byte             { return p }
+type PublicKey [PublicKeySize]byte
+
+func (p *PublicKey) KeyType() crypto.Algorithm { return crypto.Ed25519 }
+func (p *PublicKey) Bytes() []byte             { return p[:] }

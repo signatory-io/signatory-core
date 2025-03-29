@@ -17,3 +17,9 @@ const (
 	MessageAugmentation
 	ProofOfPossession
 )
+
+const (
+	P1ByteLength     = 48
+	P2ByteLength     = 96
+	ScalarByteLength = 32
+)
