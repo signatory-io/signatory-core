@@ -1,4 +1,4 @@
-package signatorycore
+package vault
 
 import (
 	"context"
@@ -23,6 +23,11 @@ type KeyReference interface {
 	SignMessage(ctx context.Context, message []byte, opts SignOptions) (crypto.Signature, error)
 	SignDigest(ctx context.Context, digest []byte, opts SignOptions) (crypto.Signature, error)
 	Vault() Vault
+}
+
+type KeyReferenceWithID interface {
+	KeyReference
+	ID() string // Additional backend specific ID that can be displayed alongside the public key
 }
 
 type Vault interface {

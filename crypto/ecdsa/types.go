@@ -47,13 +47,11 @@ func (p *PublicKey) UncompressedBytes() []byte {
 	return out
 }
 
-func (p *PublicKey) KeyType() crypto.Algorithm {
-	return p.Curve.Algorithm()
-}
+func (p *PublicKey) KeyType() crypto.Algorithm { return p.Curve.Algorithm() }
 
 var ErrInvalidPublicKey = errors.New("invalid public key")
 
-func PublicKeyFromBytes(data []byte, curve Curve) (*PublicKey, error) {
+func NewPublicKeyFromBytes(data []byte, curve Curve) (*PublicKey, error) {
 	x, y, err := unmarshalCompressed(data, curve)
 	if err != nil {
 		return nil, err
@@ -65,7 +63,7 @@ func PublicKeyFromBytes(data []byte, curve Curve) (*PublicKey, error) {
 	}, nil
 }
 
-func PublicKeyFromUncompressed(data []byte, curve Curve) (*PublicKey, error) {
+func NewPublicKeyFromUncompressed(data []byte, curve Curve) (*PublicKey, error) {
 	sz := curve.FieldBytes()
 	if len(data) != 1+2*sz {
 		return nil, ErrInvalidPublicKey
@@ -117,7 +115,9 @@ func (s *Signature) DERBytes() []byte {
 	return out.BytesOrPanic()
 }
 
-func SignatureFromBytes(data []byte, curve Curve) (*Signature, error) {
+func (s *Signature) SignatureAlgorithm() crypto.Algorithm { return s.Curve.Algorithm() }
+
+func NewSignatureFromBytes(data []byte, curve Curve) (*Signature, error) {
 	sz := curve.FieldBytes()
 	if len(data) != sz*2 {
 		return nil, fmt.Errorf("unexpected signature length: %d", len(data))
@@ -130,7 +130,7 @@ func SignatureFromBytes(data []byte, curve Curve) (*Signature, error) {
 	return &Signature{R: &r, S: &s, Curve: curve}, nil
 }
 
-func SignatureFromDERBytes(data []byte, curve Curve) (*Signature, error) {
+func NewSignatureFromDERBytes(data []byte, curve Curve) (*Signature, error) {
 	var (
 		seq  cryptobyte.String
 		r, s big.Int
