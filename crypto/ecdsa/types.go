@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/signatory-io/signatory-core/crypto"
+	"github.com/signatory-io/signatory-core/crypto/cose"
 	"golang.org/x/crypto/cryptobyte"
 	"golang.org/x/crypto/cryptobyte/asn1"
 )
@@ -47,7 +48,16 @@ func (p *PublicKey) UncompressedBytes() []byte {
 	return out
 }
 
-func (p *PublicKey) KeyType() crypto.Algorithm { return p.Curve.Algorithm() }
+func (p *PublicKey) PublicKeyType() crypto.Algorithm { return p.Curve.Algorithm() }
+
+func (p *PublicKey) COSE() cose.Key {
+	return cose.Key{
+		cose.AttrKty:     cose.KeyTypeEC2,
+		cose.AttrEC2_Crv: cose.Curve(p.Curve),
+		cose.AttrEC2_X:   p.X.Bytes(),
+		cose.AttrEC2_Y:   p.Y.Bytes(),
+	}
+}
 
 var ErrInvalidPublicKey = errors.New("invalid public key")
 
@@ -87,6 +97,13 @@ func NewPublicKeyFromUncompressed(data []byte, curve Curve) (*PublicKey, error) 
 	}, nil
 }
 
+type PrivateKey struct {
+	Curve Curve
+	D     *big.Int
+}
+
+func (p *PrivateKey) PrivateKeyType() crypto.Algorithm { return p.Curve.Algorithm() }
+
 type Signature struct {
 	Curve           Curve
 	R, S            *big.Int
@@ -94,15 +111,23 @@ type Signature struct {
 	RecoveryCode    uint8
 }
 
-// Bytes returns a raw 2*FieldBytes long signature
+// Bytes returns a raw 2*FieldBytes long signature of 2*FieldBytes+1 if recovery code is present.
+// Recoverable signature is stored in EVM format [R|S|V]
 func (s *Signature) Bytes() []byte {
 	sz := s.Curve.FieldBytes()
 	if sz == 0 {
 		panic("unknown field size")
 	}
-	out := make([]byte, sz*2)
+	sigLen := sz * 2
+	if s.HasRecoveryCode {
+		sigLen += 1
+	}
+	out := make([]byte, sigLen)
 	s.R.FillBytes(out[:sz])
-	s.S.FillBytes(out[sz:])
+	s.S.FillBytes(out[sz : sz*2])
+	if s.HasRecoveryCode {
+		out[sz*2] = s.RecoveryCode
+	}
 	return out
 }
 

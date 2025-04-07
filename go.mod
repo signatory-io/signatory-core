@@ -1,12 +1,14 @@
 module github.com/signatory-io/signatory-core
 
-go 1.23.2
+go 1.24
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.29.12
 	github.com/aws/aws-sdk-go-v2/service/kms v1.38.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
+	github.com/ecadlabs/goblst v1.1.0
+	github.com/fxamacker/cbor/v2 v2.8.0
 	golang.org/x/crypto v0.36.0
 )
 
@@ -22,4 +24,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17 // indirect
 	github.com/aws/smithy-go v1.22.2 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
+	golang.org/x/sys v0.31.0 // indirect
 )

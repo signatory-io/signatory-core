@@ -12,22 +12,44 @@ import (
 var (
 	ErrLocked    = errors.New("locked")
 	ErrAlgorithm = errors.New("unsupported algorithm")
-	ErrHash      = errors.New("unsupported hash function")
 	ErrUserInput = errors.New("invalid user input")
 	ErrConfig    = errors.New("invalid vault config")
+	ErrDecrypt   = errors.New("can't decrypt private key")
 )
 
 type KeyReference interface {
 	Algorithm() crypto.Algorithm
 	PublicKey() crypto.PublicKey
-	SignMessage(ctx context.Context, message []byte, opts SignOptions) (crypto.Signature, error)
-	SignDigest(ctx context.Context, digest []byte, opts SignOptions) (crypto.Signature, error)
+	SignMessage(ctx context.Context, message []byte, sc SignContext, opts crypto.SignOptions) (crypto.Signature, error)
+	SignDigest(ctx context.Context, digest []byte, sc SignContext, opts crypto.SignOptions) (crypto.Signature, error)
 	Vault() Vault
 }
 
 type KeyReferenceWithID interface {
 	KeyReference
 	ID() string // Additional backend specific ID that can be displayed alongside the public key
+}
+
+type Unlocker interface {
+	IsLocked() bool
+	Unlock(ctx context.Context, uc UnlockContext) error
+}
+
+type Secret interface {
+	Bytes() []byte
+}
+
+type StorableSecret interface {
+	Secret
+	Commit() error
+}
+
+type SignContext interface {
+	GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash) (Secret, error)
+}
+
+type UnlockContext interface {
+	GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash) (StorableSecret, error)
 }
 
 type Vault interface {
@@ -37,27 +59,24 @@ type Vault interface {
 	Name() string
 }
 
+// Importer interface representing an importer backend
+type Importer interface {
+	ImportOptions() any
+	Import(ctx context.Context, priv crypto.PrivateKey, options any) (KeyReference, error)
+}
+
+// Generator represents a backend which is able to generate keys on its side
+type Generator interface {
+	GenerateOptions() any
+	Generate(ctx context.Context, alg crypto.Algorithm, n int, options any) (KeyIterator, error)
+}
+
 type KeyIterator interface {
 	Keys() iter.Seq[KeyReference]
 	Err() error
 }
 
-type SignOptions interface {
-	HashFunc() crypto.Hash
-}
-
-type UserDialog struct {
-	Title  string
-	Inputs []UserInput
-}
-
-type UserInput struct {
-	Prompt     string
-	IsPassword bool
-}
-
 type GlobalOptions interface {
-	UserDialog(data *UserDialog) ([]string, error)
 	BasePath() string
 }
 

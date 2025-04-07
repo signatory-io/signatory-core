@@ -1,22 +1,26 @@
 package crypto
 
 import (
-	"crypto"
+	"encoding/hex"
+
+	"github.com/signatory-io/signatory-core/crypto/cose"
+	"golang.org/x/crypto/blake2b"
 )
 
-type Algorithm uint
+type Algorithm uint64
 
 const (
-	Ed25519 Algorithm = 1 + iota
-	ECDSA_P256
-	ECDSA_P384
-	ECDSA_P521
-	ECDSA_Secp256k1
-	ECDSA_BrainpoolP256r1
-	ECDSA_BrainpoolP384r1
-	ECDSA_BrainpoolP512r1
-	BLS12_381_MinPK
-	BLS12_381_MinSig
+	Ed25519               = Algorithm(cose.AlgEdDSA&(1<<32-1))<<32 | Algorithm(cose.CrvEd25519&(1<<32-1))
+	ECDSA_P256            = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvP256&(1<<32-1))
+	ECDSA_P384            = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvP384&(1<<32-1))
+	ECDSA_P521            = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvP521&(1<<32-1))
+	ECDSA_Secp256k1       = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvSecp256k1&(1<<32-1))
+	ECDSA_BrainpoolP256r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP256r1&(1<<32-1))
+	ECDSA_BrainpoolP320r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP320r1&(1<<32-1))
+	ECDSA_BrainpoolP384r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP384r1&(1<<32-1))
+	ECDSA_BrainpoolP512r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP512r1&(1<<32-1))
+	BLS12_381_MinPK       = Algorithm(cose.AlgBLS12_381MinPk&(1<<32-1))<<32 | Algorithm(cose.CrvBLS12_381MinPk&(1<<32-1))
+	BLS12_381_MinSig      = Algorithm(cose.AlgBLS12_381MinSig&(1<<32-1))<<32 | Algorithm(cose.CrvBLS12_381MinSig&(1<<32-1))
 )
 
 func (a Algorithm) String() string {
@@ -33,6 +37,8 @@ func (a Algorithm) String() string {
 		return "ECDSA Secp256k1"
 	case ECDSA_BrainpoolP256r1:
 		return "ECDSA BrainpoolP256r1"
+	case ECDSA_BrainpoolP320r1:
+		return "ECDSA_BrainpoolP320r1"
 	case ECDSA_BrainpoolP384r1:
 		return "ECDSA BrainpoolP384r1"
 	case ECDSA_BrainpoolP512r1:
@@ -46,43 +52,40 @@ func (a Algorithm) String() string {
 	}
 }
 
-type Hash = crypto.Hash
+type PublicKeyHash [32]byte
 
-const (
-	DefaultHash Hash = 0
-	MD4              = crypto.MD4
-	MD5              = crypto.MD5
-	SHA1             = crypto.SHA1
-	SHA224           = crypto.SHA224
-	SHA256           = crypto.SHA256
-	SHA384           = crypto.SHA384
-	SHA512           = crypto.SHA512
-	MD5SHA1          = crypto.MD5SHA1
-	RIPEMD160        = crypto.RIPEMD160
-	SHA3_224         = crypto.SHA3_224
-	SHA3_256         = crypto.SHA3_256
-	SHA3_384         = crypto.SHA3_384
-	SHA3_512         = crypto.SHA3_512
-	SHA512_224       = crypto.SHA512_224
-	SHA512_256       = crypto.SHA512_256
-	BLAKE2s_256      = crypto.BLAKE2s_256
-	BLAKE2b_256      = crypto.BLAKE2b_256
-	BLAKE2b_384      = crypto.BLAKE2b_384
-	BLAKE2b_512      = crypto.BLAKE2b_512
-)
-
-type SignOptions struct {
-	Hash Hash
+func (h *PublicKeyHash) String() string {
+	return hex.EncodeToString(h[:])
 }
 
-func (o *SignOptions) HashFunc() Hash { return o.Hash }
+func NewPublicKeyHash(pub PublicKey) PublicKeyHash {
+	return PublicKeyHash(blake2b.Sum256(pub.COSE().Encode()))
+}
 
 type PublicKey interface {
-	KeyType() Algorithm
+	PublicKeyType() Algorithm
 	Bytes() []byte
+	COSE() cose.Key
 }
 
 type Signature interface {
 	SignatureAlgorithm() Algorithm
 	Bytes() []byte
+}
+
+// PrivateKey may not contain its precomputed public counterpart
+type PrivateKey interface {
+	PrivateKeyType() Algorithm
+}
+
+// LocalSigner is implemented by types which have a software implementation
+type LocalSigner interface {
+	PrivateKey
+	COSE() cose.Key
+	SignMessage(message []byte, opts SignOptions) (Signature, error)
+	SignDigest(digest []byte, opts SignOptions) (Signature, error)
+}
+
+type SignOptions interface {
+	HashFunc() Hash
 }

@@ -2,11 +2,8 @@ package awskms
 
 import (
 	"context"
-	stdcrypto "crypto"
 	"fmt"
 	"iter"
-
-	_ "crypto/sha256"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
@@ -43,29 +40,35 @@ func algorithmFromKeySpec(ks types.KeySpec) crypto.Algorithm {
 }
 
 func (k *kmsKey) Algorithm() crypto.Algorithm {
-	return k.pub.KeyType()
+	return k.pub.PublicKeyType()
 }
 
 func (k *kmsKey) PublicKey() crypto.PublicKey { return k.pub }
 
-func (k *kmsKey) SignMessage(ctx context.Context, message []byte, opts vault.SignOptions) (crypto.Signature, error) {
-	hash := stdcrypto.SHA256
+func getHash(opts crypto.SignOptions) crypto.Hash {
 	if opts != nil {
-		if h := opts.HashFunc(); h != crypto.DefaultHash {
-			if !h.Available() {
-				return nil, fmt.Errorf("hash function %v is not available", h)
-			}
-			hash = h
+		if h := opts.HashFunc(); h != nil {
+			return h
 		}
+	}
+	return nil
+}
+
+func (k *kmsKey) SignMessage(ctx context.Context, message []byte, sc vault.SignContext, opts crypto.SignOptions) (crypto.Signature, error) {
+	var hash crypto.Hash
+	if h := getHash(opts); h != nil {
+		hash = h
+	} else {
+		hash = crypto.SHA256
 	}
 	h := hash.New()
 	h.Write(message)
-	return k.SignDigest(ctx, h.Sum(nil), opts)
+	return k.SignDigest(ctx, h.Sum(nil), sc, opts)
 }
 
-func (k *kmsKey) SignDigest(ctx context.Context, digest []byte, opts vault.SignOptions) (crypto.Signature, error) {
-	if len(digest) != stdcrypto.SHA256.Size() {
-		return nil, fmt.Errorf("digest must be %d bytes long", stdcrypto.SHA256.Size())
+func (k *kmsKey) SignDigest(ctx context.Context, digest []byte, sc vault.SignContext, opts crypto.SignOptions) (crypto.Signature, error) {
+	if len(digest) != crypto.SHA256.Size() {
+		return nil, fmt.Errorf("digest must be %d bytes long", crypto.SHA256.Size())
 	}
 	out, err := k.v.client.Sign(ctx, &kms.SignInput{
 		KeyId:            k.id,
@@ -135,6 +138,13 @@ func (it *kmsIterator) Keys() iter.Seq[vault.KeyReference] {
 	}
 }
 
+type errAlgo struct {
+	value any
+}
+
+func (e errAlgo) Error() string        { return fmt.Sprintf("unsupported key type: %T", e.value) }
+func (d errAlgo) Is(target error) bool { return target == vault.ErrAlgorithm }
+
 func (v *KMSVault) getPublicKey(ctx context.Context, keyID *string, filter map[crypto.Algorithm]struct{}) (*kmsKey, error) {
 	resp, err := v.client.GetPublicKey(ctx, &kms.GetPublicKeyInput{
 		KeyId: keyID,
@@ -155,7 +165,7 @@ func (v *KMSVault) getPublicKey(ctx context.Context, keyID *string, filter map[c
 	}
 	pub, ok := p.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("unsupported key type: %T", p)
+		return nil, errAlgo{value: p}
 	}
 	return &kmsKey{
 		pub: pub,
