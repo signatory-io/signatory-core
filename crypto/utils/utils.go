@@ -60,22 +60,30 @@ func FingerprintRandomArt(head string, digest []byte) []byte {
 	field[x+y*sizeX] = endSym
 
 	var out bytes.Buffer
-	if len(head) > sizeX {
-		head = head[:sizeX]
-	}
-	hPadL := (sizeX - len(head)) / 2
-	hPadR := sizeX - len(head) - hPadL
-	if hPadL != 0 {
-		out.WriteRune('+')
-		for range hPadL - 1 {
-			out.WriteRune('-')
+	if head != "" {
+		if len(head) > sizeX {
+			head = head[:sizeX]
 		}
-	}
-	out.WriteRune('[')
-	out.WriteString(head)
-	out.WriteRune(']')
-	if hPadR != 0 {
-		for range hPadR - 1 {
+		hPadL := (sizeX - len(head)) / 2
+		hPadR := sizeX - len(head) - hPadL
+		if hPadL != 0 {
+			out.WriteRune('+')
+			for range hPadL - 1 {
+				out.WriteRune('-')
+			}
+		}
+		out.WriteRune('[')
+		out.WriteString(head)
+		out.WriteRune(']')
+		if hPadR != 0 {
+			for range hPadR - 1 {
+				out.WriteRune('-')
+			}
+			out.WriteRune('+')
+		}
+	} else {
+		out.WriteRune('+')
+		for range sizeX - 2 {
 			out.WriteRune('-')
 		}
 		out.WriteRune('+')

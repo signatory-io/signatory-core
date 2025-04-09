@@ -10,17 +10,17 @@ import (
 type Algorithm uint64
 
 const (
-	Ed25519               = Algorithm(cose.AlgEdDSA&(1<<32-1))<<32 | Algorithm(cose.CrvEd25519&(1<<32-1))
-	ECDSA_P256            = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvP256&(1<<32-1))
-	ECDSA_P384            = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvP384&(1<<32-1))
-	ECDSA_P521            = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvP521&(1<<32-1))
-	ECDSA_Secp256k1       = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvSecp256k1&(1<<32-1))
-	ECDSA_BrainpoolP256r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP256r1&(1<<32-1))
-	ECDSA_BrainpoolP320r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP320r1&(1<<32-1))
-	ECDSA_BrainpoolP384r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP384r1&(1<<32-1))
-	ECDSA_BrainpoolP512r1 = Algorithm(cose.AlgES256&(1<<32-1))<<32 | Algorithm(cose.CrvBrainpoolP512r1&(1<<32-1))
-	BLS12_381_MinPK       = Algorithm(cose.AlgBLS12_381MinPk&(1<<32-1))<<32 | Algorithm(cose.CrvBLS12_381MinPk&(1<<32-1))
-	BLS12_381_MinSig      = Algorithm(cose.AlgBLS12_381MinSig&(1<<32-1))<<32 | Algorithm(cose.CrvBLS12_381MinSig&(1<<32-1))
+	Ed25519 Algorithm = 1 + iota
+	ECDSA_P256
+	ECDSA_P384
+	ECDSA_P521
+	ECDSA_Secp256k1
+	ECDSA_BrainpoolP256r1
+	ECDSA_BrainpoolP320r1
+	ECDSA_BrainpoolP384r1
+	ECDSA_BrainpoolP512r1
+	BLS12_381_MinPK
+	BLS12_381_MinSig
 )
 
 func (a Algorithm) String() string {
@@ -44,9 +44,9 @@ func (a Algorithm) String() string {
 	case ECDSA_BrainpoolP512r1:
 		return "ECDSA BrainpoolP512r1"
 	case BLS12_381_MinPK:
-		return "BLS12_381 MinPK"
+		return "BLS12-381 MinPK"
 	case BLS12_381_MinSig:
-		return "BLS12_381 MinSig"
+		return "BLS12-381 MinSig"
 	default:
 		return "Unknown"
 	}

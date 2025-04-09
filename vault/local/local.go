@@ -113,11 +113,11 @@ func (l *localKey) getSigner(ctx context.Context, sc vault.SignContext) (crypto.
 	}
 
 	pkh := crypto.NewPublicKeyHash(l.pub)
-	pwd, err := sc.GetSecret(ctx, &pkh)
+	pwd, err := sc.GetSecret(ctx, &pkh, l.pub.PublicKeyType())
 	if err != nil {
 		return nil, err
 	}
-	decBytes, err := l.data.decrypt(pwd.Bytes())
+	decBytes, err := l.data.decrypt(pwd)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (l *localKey) IsLocked() bool {
 	return l.decrypted == nil
 }
 
-func (l *localKey) Unlock(ctx context.Context, uc vault.UnlockContext) error {
+func (l *localKey) Unlock(ctx context.Context, uc vault.SignContext) error {
 	l.mtx.RLock()
 	if l.decrypted != nil {
 		l.mtx.RUnlock()
@@ -165,11 +165,11 @@ func (l *localKey) Unlock(ctx context.Context, uc vault.UnlockContext) error {
 	l.mtx.RUnlock()
 
 	pkh := crypto.NewPublicKeyHash(l.pub)
-	pwd, err := uc.GetSecret(ctx, &pkh)
+	pwd, err := uc.GetSecret(ctx, &pkh, l.pub.PublicKeyType())
 	if err != nil {
 		return err
 	}
-	decBytes, err := l.data.decrypt(pwd.Bytes())
+	decBytes, err := l.data.decrypt(pwd)
 	if err != nil {
 		return err
 	}
@@ -180,9 +180,6 @@ func (l *localKey) Unlock(ctx context.Context, uc vault.UnlockContext) error {
 	signer, ok := priv.(crypto.LocalSigner)
 	if !ok {
 		return fmt.Errorf("%T has no local implementation", priv)
-	}
-	if err := pwd.Commit(); err != nil {
-		return err
 	}
 
 	dec := &decryptedKey{

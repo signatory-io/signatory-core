@@ -32,24 +32,11 @@ type KeyReferenceWithID interface {
 
 type Unlocker interface {
 	IsLocked() bool
-	Unlock(ctx context.Context, uc UnlockContext) error
-}
-
-type Secret interface {
-	Bytes() []byte
-}
-
-type StorableSecret interface {
-	Secret
-	Commit() error
+	Unlock(ctx context.Context, sc SignContext) error
 }
 
 type SignContext interface {
-	GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash) (Secret, error)
-}
-
-type UnlockContext interface {
-	GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash) (StorableSecret, error)
+	GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm) ([]byte, error)
 }
 
 type Vault interface {
