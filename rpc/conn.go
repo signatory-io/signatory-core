@@ -232,16 +232,12 @@ type packetCipher struct {
 	nonce    uint64
 }
 
-const minimalBufferSize = 4 + 4 + chacha20poly1305.Overhead
-
 func (p *packetCipher) readPacket(r io.Reader) ([]byte, error) {
 	var nonce [12]byte
 	binary.BigEndian.PutUint64(nonce[:], p.nonce)
 
-	if len(p.buf) < minimalBufferSize {
-		p.buf = make([]byte, minimalBufferSize)
-	}
-	if _, err := io.ReadFull(r, p.buf[:4]); err != nil {
+	var encLenghtBuf [4]byte
+	if _, err := io.ReadFull(r, encLenghtBuf[:]); err != nil {
 		return nil, err
 	}
 	lc, err := chacha20.NewUnauthenticatedCipher(p.lenKey, nonce[:])
@@ -249,20 +245,20 @@ func (p *packetCipher) readPacket(r io.Reader) ([]byte, error) {
 		panic(err)
 	}
 	var lengthBuf [4]byte
-	lc.XORKeyStream(lengthBuf[:], p.buf[:4])
+	lc.XORKeyStream(lengthBuf[:], encLenghtBuf[:])
 	length := int(binary.BigEndian.Uint32(lengthBuf[:]))
 
 	if length < chacha20poly1305.Overhead+4 {
 		return nil, errors.New("packet is too short")
 	}
-	if len(p.buf) < 4+length {
-		p.buf = make([]byte, 4+length)
+	if len(p.buf) < length {
+		p.buf = make([]byte, length)
 	}
-	payload := p.buf[4 : 4+length]
+	payload := p.buf[:length]
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return nil, err
 	}
-	if _, err = p.plCipher.Open(payload[:0], nonce[:], payload, p.buf[:4]); err != nil {
+	if _, err = p.plCipher.Open(payload[:0], nonce[:], payload, encLenghtBuf[:]); err != nil {
 		return nil, err
 	}
 	p.nonce++
@@ -273,15 +269,19 @@ func (p *packetCipher) readPacket(r io.Reader) ([]byte, error) {
 	return payload[4 : 4+unpaddedLength], nil
 }
 
-func (p *packetCipher) writePacket(w io.Writer, data []byte, paddingLen int) error {
+const granularity = 64
+
+func (p *packetCipher) writePacket(w io.Writer, data []byte) error {
 	var nonce [12]byte
 	binary.BigEndian.PutUint64(nonce[:], p.nonce)
 
-	dataLen := 4 + len(data) + paddingLen
-	length := dataLen + chacha20poly1305.Overhead
-	if len(p.buf) < 4+length {
-		p.buf = make([]byte, 4+length)
+	total := 4 + 4 + len(data) + chacha20poly1305.Overhead
+	padded := (total + granularity - 1) &^ (granularity - 1)
+	if len(p.buf) < padded {
+		p.buf = make([]byte, padded)
 	}
+	length := padded - 4
+	dataLen := length - chacha20poly1305.Overhead
 
 	lc, err := chacha20.NewUnauthenticatedCipher(p.lenKey, nonce[:])
 	if err != nil {
@@ -298,7 +298,7 @@ func (p *packetCipher) writePacket(w io.Writer, data []byte, paddingLen int) err
 		rand.Read(toPad)
 	}
 	p.plCipher.Seal(payload[:0], nonce[:], payload, p.buf[:4])
-	packet := p.buf[:4+length]
+	packet := p.buf[:padded]
 	if _, err = w.Write(packet); err != nil {
 		return err
 	}
@@ -313,15 +313,8 @@ type Conn struct {
 	remotePub               *ed25519.PublicKey
 }
 
-const granularity = 8
-
-func (c *Conn) readPacket() ([]byte, error) { return c.readCipher.readPacket(c.conn) }
-
-func (c *Conn) writePacket(data []byte) error {
-	total := 4 + 4 + len(data) + chacha20poly1305.Overhead
-	padded := (total + granularity - 1) &^ (granularity - 1)
-	return c.writeCipher.writePacket(c.conn, data, padded-total)
-}
+func (c *Conn) readPacket() ([]byte, error)   { return c.readCipher.readPacket(c.conn) }
+func (c *Conn) writePacket(data []byte) error { return c.writeCipher.writePacket(c.conn, data) }
 
 func (c *Conn) readMessage(v any) error {
 	packet, err := c.readPacket()
