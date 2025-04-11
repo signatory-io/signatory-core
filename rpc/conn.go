@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"net"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
@@ -19,25 +19,30 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-type encodedConn interface {
-	readMessage(v any) error
-	writeMessage(v any) error
+type Transport interface {
+	io.ReadWriteCloser
+	SetDeadline(t time.Time) error
 }
 
-type cborStream struct {
+type EncodedConnection interface {
+	ReadMessage(v any) error
+	WriteMessage(v any) error
+}
+
+type rawConn struct {
 	conn      io.ReadWriter
 	encBuffer bytes.Buffer
 	dec       *cbor.Decoder
 }
 
-func newCborStream(conn io.ReadWriter) *cborStream {
-	return &cborStream{
+func newRawConn(conn io.ReadWriter) *rawConn {
+	return &rawConn{
 		dec:  cbor.NewDecoder(conn),
 		conn: conn,
 	}
 }
 
-func (c *cborStream) writeMessage(v any) error {
+func (c *rawConn) WriteMessage(v any) error {
 	c.encBuffer.Reset()
 	if err := cbor.MarshalToBuffer(v, &c.encBuffer); err != nil {
 		return err
@@ -46,16 +51,16 @@ func (c *cborStream) writeMessage(v any) error {
 	return err
 }
 
-func (c *cborStream) readMessage(v any) error { return c.dec.Decode(v) }
+func (c *rawConn) ReadMessage(v any) error { return c.dec.Decode(v) }
 
-func exchange[T any](c encodedConn, data *T) (out *T, err error) {
+func exchange[T any, C EncodedConnection](c C, data *T) (out *T, err error) {
 	out = new(T)
 	errCh := make(chan error)
 	go func() {
-		errCh <- c.writeMessage(data)
+		errCh <- c.WriteMessage(data)
 	}()
 	go func() {
-		errCh <- c.readMessage(out)
+		errCh <- c.ReadMessage(out)
 	}()
 	for range 2 {
 		e := <-errCh
@@ -88,7 +93,10 @@ const (
 )
 
 type sessionKeys struct {
-	rdLen, rdPl, wrLen, wrPl []byte
+	rdLength  []byte
+	rdPayload []byte
+	wrLength  []byte
+	wrPayload []byte
 }
 
 // We don't need a counter mode here because desired key length is 32 bytes. So it's not even an expansion --Eugene
@@ -116,10 +124,10 @@ func generateKeys(localEph, remoteEph *ecdh.PublicKey, secret []byte) sessionKey
 	prk := blake2b.Sum256(secret)
 
 	return sessionKeys{
-		rdLen: genSingle(prk[:], rBytes, tagLen),
-		rdPl:  genSingle(prk[:], rBytes, tagPayload),
-		wrLen: genSingle(prk[:], wBytes, tagLen),
-		wrPl:  genSingle(prk[:], wBytes, tagPayload),
+		rdLength:  genSingle(prk[:], rBytes, tagLen),
+		rdPayload: genSingle(prk[:], rBytes, tagPayload),
+		wrLength:  genSingle(prk[:], wBytes, tagLen),
+		wrPayload: genSingle(prk[:], wBytes, tagPayload),
 	}
 }
 
@@ -134,12 +142,12 @@ type authMessage struct {
 	ChallengeSignature *ed25519.Signature
 }
 
-func NewConnection(transport net.Conn, localKey *ed25519.PrivateKey) (*Conn, error) {
+func NewConnection(transport Transport, localKey *ed25519.PrivateKey) (*Conn, error) {
 	eph, err := curve().GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	rawConn := newCborStream(transport)
+	rawConn := newRawConn(transport)
 
 	var localPub *ed25519.PublicKey
 	if localKey != nil {
@@ -168,24 +176,10 @@ func NewConnection(transport net.Conn, localKey *ed25519.PrivateKey) (*Conn, err
 	}
 
 	keys := generateKeys(eph.PublicKey(), remoteEphPub, secret)
-	rplc, err := chacha20poly1305.New(keys.rdPl)
-	if err != nil {
-		panic(err)
-	}
-	wplc, err := chacha20poly1305.New(keys.wrPl)
-	if err != nil {
-		panic(err)
-	}
 	conn := &Conn{
-		conn: transport,
-		readCipher: packetCipher{
-			lenKey:   keys.rdLen,
-			plCipher: rplc,
-		},
-		writeCipher: packetCipher{
-			lenKey:   keys.wrLen,
-			plCipher: wplc,
-		},
+		conn:        transport,
+		readCipher:  newPacketCipher(keys.rdLength, keys.rdPayload),
+		writeCipher: newPacketCipher(keys.wrLength, keys.wrPayload),
 	}
 
 	if !authenticate {
@@ -203,6 +197,8 @@ func NewConnection(transport net.Conn, localKey *ed25519.PrivateKey) (*Conn, err
 	ch.Write([]byte(tagSecret))
 	ch.Write(secret)
 	challenge := ch.Sum(nil)
+
+	conn.sessionID = challenge
 
 	s, err := localKey.SignMessage(challenge, nil)
 	if err != nil {
@@ -226,10 +222,21 @@ func NewConnection(transport net.Conn, localKey *ed25519.PrivateKey) (*Conn, err
 // including MAC and the padding is arbitrary sized.
 
 type packetCipher struct {
-	lenKey   []byte
-	plCipher cipher.AEAD
-	buf      []byte
-	nonce    uint64
+	lengthKey     []byte
+	payloadCipher cipher.AEAD
+	buf           []byte
+	nonce         uint64
+}
+
+func newPacketCipher(lengthKey, payloadKey []byte) packetCipher {
+	plCipher, err := chacha20poly1305.New(payloadKey)
+	if err != nil {
+		panic(err)
+	}
+	return packetCipher{
+		lengthKey:     lengthKey,
+		payloadCipher: plCipher,
+	}
 }
 
 func (p *packetCipher) readPacket(r io.Reader) ([]byte, error) {
@@ -240,7 +247,7 @@ func (p *packetCipher) readPacket(r io.Reader) ([]byte, error) {
 	if _, err := io.ReadFull(r, encLenghtBuf[:]); err != nil {
 		return nil, err
 	}
-	lc, err := chacha20.NewUnauthenticatedCipher(p.lenKey, nonce[:])
+	lc, err := chacha20.NewUnauthenticatedCipher(p.lengthKey, nonce[:])
 	if err != nil {
 		panic(err)
 	}
@@ -258,7 +265,7 @@ func (p *packetCipher) readPacket(r io.Reader) ([]byte, error) {
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return nil, err
 	}
-	if _, err = p.plCipher.Open(payload[:0], nonce[:], payload, encLenghtBuf[:]); err != nil {
+	if _, err = p.payloadCipher.Open(payload[:0], nonce[:], payload, encLenghtBuf[:]); err != nil {
 		return nil, err
 	}
 	p.nonce++
@@ -283,7 +290,7 @@ func (p *packetCipher) writePacket(w io.Writer, data []byte) error {
 	length := padded - 4
 	dataLen := length - chacha20poly1305.Overhead
 
-	lc, err := chacha20.NewUnauthenticatedCipher(p.lenKey, nonce[:])
+	lc, err := chacha20.NewUnauthenticatedCipher(p.lengthKey, nonce[:])
 	if err != nil {
 		panic(err)
 	}
@@ -297,7 +304,7 @@ func (p *packetCipher) writePacket(w io.Writer, data []byte) error {
 	if len(toPad) != 0 {
 		rand.Read(toPad)
 	}
-	p.plCipher.Seal(payload[:0], nonce[:], payload, p.buf[:4])
+	p.payloadCipher.Seal(payload[:0], nonce[:], payload, p.buf[:4])
 	packet := p.buf[:padded]
 	if _, err = w.Write(packet); err != nil {
 		return err
@@ -307,16 +314,17 @@ func (p *packetCipher) writePacket(w io.Writer, data []byte) error {
 }
 
 type Conn struct {
-	conn                    net.Conn
+	conn                    Transport
 	readCipher, writeCipher packetCipher
 	encBuffer               bytes.Buffer
 	remotePub               *ed25519.PublicKey
+	sessionID               []byte
 }
 
 func (c *Conn) readPacket() ([]byte, error)   { return c.readCipher.readPacket(c.conn) }
 func (c *Conn) writePacket(data []byte) error { return c.writeCipher.writePacket(c.conn, data) }
 
-func (c *Conn) readMessage(v any) error {
+func (c *Conn) ReadMessage(v any) error {
 	packet, err := c.readPacket()
 	if err != nil {
 		return err
@@ -324,10 +332,14 @@ func (c *Conn) readMessage(v any) error {
 	return cbor.Unmarshal(packet, v)
 }
 
-func (c *Conn) writeMessage(v any) error {
+func (c *Conn) WriteMessage(v any) error {
 	c.encBuffer.Reset()
 	if err := cbor.MarshalToBuffer(v, &c.encBuffer); err != nil {
 		return err
 	}
 	return c.writePacket(c.encBuffer.Bytes())
 }
+
+func (c *Conn) RemotePublicKey() *ed25519.PublicKey { return c.remotePub }
+func (c *Conn) SessionID() []byte                   { return c.sessionID }
+func (c *Conn) Close() error                        { return c.conn.Close() }
