@@ -85,11 +85,12 @@ func combineKeys(a, b []byte) []byte {
 }
 
 const (
-	tagSecret  = "X25519Secret"
-	tagEphKeys = "Curve25519EphemeralPublicKeysXorCombined"
-	tagAuth    = "AuthenticationPublicKeysXorCombined"
-	tagLen     = "SignatorySecureConnectionLengthKey"
-	tagPayload = "SignatorySecureConnectionPayloadKey"
+	tagSuite   = "SIGNATORY_SECURE_CONNECTION_X25519_ED25519"
+	tagSecret  = "DH_SECRET"
+	tagEphKeys = "EPHEMERAL_PUBLIC_KEYS_XOR_COMBINED"
+	tagAuth    = "AUTHENTICATION_PUBLIC_KEYS_XOR_COMBINED"
+	tagLen     = "SIGNATORY_SECURE_CONNECTION_LENGTH_KEY"
+	tagPayload = "SIGNATORY_SECURE_CONNECTION_PAYLOAD_KEY"
 )
 
 type sessionKeys struct {
@@ -190,6 +191,7 @@ func NewConnection(transport Transport, localKey *ed25519.PrivateKey) (*Conn, er
 	combinedAuthKeys := combineKeys(localPub[:], conn.remotePub[:])
 
 	ch, _ := blake2b.New256(nil)
+	ch.Write([]byte(tagSuite))
 	ch.Write([]byte(tagEphKeys))
 	ch.Write(combinedEphKeys)
 	ch.Write([]byte(tagAuth))
