@@ -14,6 +14,13 @@ const (
 
 type PublicKey [bls.P2ByteLength]byte
 
+func (p *PublicKey) Equal(other crypto.PublicKey) bool {
+	if oth, ok := other.(*PublicKey); ok {
+		return *oth == *p
+	}
+	return false
+}
+
 func (p *PublicKey) PublicKeyType() crypto.Algorithm { return crypto.BLS12_381_MinSig }
 func (p *PublicKey) Bytes() []byte                   { return p[:] }
 func (p *PublicKey) COSE() cose.Key {
@@ -26,7 +33,7 @@ func (p *PublicKey) COSE() cose.Key {
 
 type PrivateKey [bls.ScalarByteLength]byte
 
-func (p *PrivateKey) PrivateKeyType() crypto.Algorithm { return crypto.BLS12_381_MinPK }
+func (p *PrivateKey) PrivateKeyType() crypto.Algorithm { return crypto.BLS12_381_MinSig }
 
 type Signature [bls.P1ByteLength]byte
 

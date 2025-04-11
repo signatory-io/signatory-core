@@ -21,6 +21,10 @@ func ParsePublicKey(data []byte) (crypto.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewPublicKey(key)
+}
+
+func NewPublicKey(key cose.Key) (crypto.PublicKey, error) {
 	switch kty := key.Kty(); kty {
 	case cose.KeyTypeOKP:
 		x, ok := key[cose.AttrOKP_X].([]byte)
@@ -61,15 +65,27 @@ func ParsePublicKey(data []byte) (crypto.PublicKey, error) {
 		if crv == 0 {
 			return nil, errInvalidPublicKey
 		}
-		x, okX := key[cose.AttrEC2_X].([]byte)
-		y, okY := key[cose.AttrEC2_Y].([]byte)
-		if !okX || !okY {
+		xBytes, ok := key[cose.AttrEC2_X].([]byte)
+		if !ok {
+			return nil, errInvalidPublicKey
+		}
+		var x, y *big.Int
+		switch yVal := key[cose.AttrEC2_Y].(type) {
+		case []byte:
+			x = new(big.Int).SetBytes(xBytes)
+			y = new(big.Int).SetBytes(yVal)
+		case bool:
+			var err error
+			if x, y, err = ecdsa.UnmarshalCompressed(xBytes, yVal, ecdsa.Curve(crv)); err != nil {
+				return nil, err
+			}
+		default:
 			return nil, errInvalidPublicKey
 		}
 		return &ecdsa.PublicKey{
 			Curve: ecdsa.Curve(crv),
-			X:     new(big.Int).SetBytes(x),
-			Y:     new(big.Int).SetBytes(y),
+			X:     x,
+			Y:     y,
 		}, nil
 
 	default:
@@ -82,6 +98,10 @@ func ParsePrivateKey(data []byte) (crypto.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewPrivateKey(key)
+}
+
+func NewPrivateKey(key cose.Key) (crypto.PrivateKey, error) {
 	switch kty := key.Kty(); kty {
 	case cose.KeyTypeOKP:
 		d, ok := key[cose.AttrOKP_D].([]byte)

@@ -66,6 +66,7 @@ type PublicKey interface {
 	PublicKeyType() Algorithm
 	Bytes() []byte
 	COSE() cose.Key
+	Equal(other PublicKey) bool
 }
 
 type Signature interface {
@@ -81,9 +82,18 @@ type PrivateKey interface {
 // LocalSigner is implemented by types which have a software implementation
 type LocalSigner interface {
 	PrivateKey
+	IsAvailable() bool
+	Public() PublicKey
 	COSE() cose.Key
 	SignMessage(message []byte, opts SignOptions) (Signature, error)
 	SignDigest(digest []byte, opts SignOptions) (Signature, error)
+}
+
+type LocalVerifier interface {
+	PublicKey
+	IsAvailable() bool
+	VerifyMessageSignature(sig Signature, message []byte, opts SignOptions) bool
+	VerifyDigestSignature(sig Signature, digest []byte, opts SignOptions) bool
 }
 
 type SignOptions interface {

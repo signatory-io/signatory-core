@@ -1,6 +1,8 @@
 package minpk
 
 import (
+	"crypto/rand"
+
 	"github.com/ecadlabs/goblst"
 	"github.com/ecadlabs/goblst/minpk"
 	"github.com/signatory-io/signatory-core/crypto"
@@ -8,7 +10,38 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/cose"
 )
 
-var _ crypto.LocalSigner = (*PrivateKey)(nil)
+var (
+	_ crypto.LocalSigner   = (*PrivateKey)(nil)
+	_ crypto.LocalVerifier = (*PublicKey)(nil)
+)
+
+func (p *PublicKey) Equal(other crypto.PublicKey) bool {
+	if oth, ok := other.(*PublicKey); ok {
+		return *oth == *p
+	}
+	return false
+}
+
+func GeneratePrivateKey() (*PrivateKey, error) {
+	priv, err := minpk.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	var out PrivateKey
+	copy(out[:], priv.Bytes())
+	return &out, nil
+}
+
+func (p *PrivateKey) Public() crypto.PublicKey {
+	priv, err := minpk.PrivateKeyFromBytes(p[:])
+	if err != nil {
+		panic(err)
+	}
+	pub := priv.PublicKey().Bytes()
+	var out PublicKey
+	copy(out[:], pub)
+	return &out
+}
 
 func (p *PrivateKey) COSE() cose.Key {
 	priv, err := minpk.PrivateKeyFromBytes(p[:])
@@ -71,3 +104,43 @@ func (p *PrivateKey) SignMessage(message []byte, opts crypto.SignOptions) (crypt
 	}
 	return p.SignDigest(message, opts)
 }
+
+func (p *PublicKey) VerifyDigestSignature(sig crypto.Signature, digest []byte, opts crypto.SignOptions) bool {
+	pub, err := minpk.PublicKeyFromBytes(p[:])
+	if err != nil {
+		return false
+	}
+	s, ok := sig.(*Signature)
+	if !ok {
+		return false
+	}
+	ss, err := minpk.SignatureFromBytes(s[:])
+	if err != nil {
+		return false
+	}
+	scheme := bls.Basic
+	if opts, ok := opts.(*bls.Options); ok {
+		scheme = opts.Scheme
+	}
+	if scheme == bls.Prove {
+		return minpk.VerifyProof(pub, ss) == nil
+	} else {
+		return minpk.Verify(pub, digest, ss, getScheme(scheme)) == nil
+	}
+}
+
+func (p *PublicKey) VerifyMessageSignature(sig crypto.Signature, message []byte, opts crypto.SignOptions) bool {
+	if opts != nil {
+		if o, ok := opts.(*bls.Options); !ok || o.Scheme != bls.Prove {
+			if h := opts.HashFunc(); h != nil {
+				hashFunc := h.New()
+				hashFunc.Write(message)
+				message = hashFunc.Sum(nil)
+			}
+		}
+	}
+	return p.VerifyDigestSignature(sig, message, opts)
+}
+
+func (p *PublicKey) IsAvailable() bool  { return true }
+func (p *PrivateKey) IsAvailable() bool { return true }

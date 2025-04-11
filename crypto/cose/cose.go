@@ -362,7 +362,7 @@ type CommonAttrs interface {
 type Key map[int64]any
 
 func GetAttr[T ~int64](k Key, attr int64) T {
-	switch v := k[AttrKty].(type) {
+	switch v := k[attr].(type) {
 	case int64:
 		return T(v)
 	case T:
@@ -414,7 +414,14 @@ func (k Key) Encode() []byte {
 }
 
 func DecodeKey(data []byte) (key Key, err error) {
-	err = cbor.Unmarshal(data, &key)
+	do := cbor.DecOptions{
+		IntDec: cbor.IntDecConvertSigned,
+	}
+	dm, err := do.DecMode()
+	if err != nil {
+		panic(err)
+	}
+	err = dm.Unmarshal(data, &key)
 	return
 }
 

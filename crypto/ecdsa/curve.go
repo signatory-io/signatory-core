@@ -1,10 +1,8 @@
 package ecdsa
 
 import (
-	"crypto/elliptic"
 	hexenc "encoding/hex"
 	"math/big"
-	"sync"
 
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/cose"
@@ -22,6 +20,10 @@ const (
 	BrainpoolP384r1 = Curve(cose.CrvBrainpoolP384r1)
 	BrainpoolP512r1 = Curve(cose.CrvBrainpoolP512r1)
 )
+
+func (c Curve) IsValid() bool {
+	return c.Algorithm() != 0
+}
 
 func (c Curve) String() string {
 	return cose.Curve(c).String()
@@ -246,23 +248,3 @@ func (c Curve) isOnCurve(x, y *big.Int) bool {
 
 	return c.YSquare(x).Cmp(y2) == 0
 }
-
-func (c Curve) compat(name string) elliptic.Curve {
-	x, y := c.G()
-	return &elliptic.CurveParams{
-		P:       c.P(),
-		N:       c.N(),
-		B:       c.B(),
-		Gx:      x,
-		Gy:      y,
-		BitSize: c.FieldBytes() * 8,
-		Name:    name,
-	}
-}
-
-var (
-	CompatBrainpoolP256r1 = sync.OnceValue(func() elliptic.Curve { return BrainpoolP256r1.compat("brainpoolP256r1") })
-	CompatBrainpoolP320r1 = sync.OnceValue(func() elliptic.Curve { return BrainpoolP320r1.compat("brainpoolP320r1") })
-	CompatBrainpoolP384r1 = sync.OnceValue(func() elliptic.Curve { return BrainpoolP384r1.compat("brainpoolP384r1") })
-	CompatBrainpoolP512r1 = sync.OnceValue(func() elliptic.Curve { return BrainpoolP512r1.compat("brainpoolP512r1") })
-)

@@ -23,6 +23,13 @@ type PublicKey struct {
 	X, Y  *big.Int
 }
 
+func (p *PublicKey) Equal(other crypto.PublicKey) bool {
+	if oth, ok := other.(*PublicKey); ok {
+		return oth.Curve == p.Curve && oth.X.Cmp(p.X) == 0 && oth.Y.Cmp(p.Y) == 0
+	}
+	return false
+}
+
 // Bytes returns compressed point
 func (p *PublicKey) Bytes() []byte {
 	sz := p.Curve.FieldBytes()
@@ -51,18 +58,25 @@ func (p *PublicKey) UncompressedBytes() []byte {
 func (p *PublicKey) PublicKeyType() crypto.Algorithm { return p.Curve.Algorithm() }
 
 func (p *PublicKey) COSE() cose.Key {
+	sz := p.Curve.FieldBytes()
+	if sz == 0 {
+		panic("unknown field size")
+	}
+	xBytes := make([]byte, sz)
+	p.X.FillBytes(xBytes)
+	isOdd := p.Y.Bit(0) != 0
 	return cose.Key{
 		cose.AttrKty:     cose.KeyTypeEC2,
 		cose.AttrEC2_Crv: cose.Curve(p.Curve),
-		cose.AttrEC2_X:   p.X.Bytes(),
-		cose.AttrEC2_Y:   p.Y.Bytes(),
+		cose.AttrEC2_X:   xBytes,
+		cose.AttrEC2_Y:   isOdd,
 	}
 }
 
 var ErrInvalidPublicKey = errors.New("invalid public key")
 
 func NewPublicKeyFromBytes(data []byte, curve Curve) (*PublicKey, error) {
-	x, y, err := unmarshalCompressed(data, curve)
+	x, y, err := unmarshalCompressedBytes(data, curve)
 	if err != nil {
 		return nil, err
 	}
@@ -172,16 +186,20 @@ func NewSignatureFromDERBytes(data []byte, curve Curve) (*Signature, error) {
 }
 
 // this is a curve agnostic version for polynomials with any A, not just -3 mod p
-func unmarshalCompressed(data []byte, curve Curve) (x, y *big.Int, err error) {
-	byteLen := curve.FieldBytes()
-	if len(data) != 1+byteLen {
+func unmarshalCompressedBytes(data []byte, curve Curve) (x, y *big.Int, err error) {
+	if len(data) != 1+curve.FieldBytes() {
 		return nil, nil, ErrInvalidPublicKey
 	}
 	if data[0] != 2 && data[0] != 3 { // compressed form
 		return nil, nil, ErrInvalidPublicKey
 	}
+	return UnmarshalCompressed(data[1:], data[0]&1 == 1, curve)
+}
+
+// this is a curve agnostic version for polynomials with any A, not just -3 mod p
+func UnmarshalCompressed(xBytes []byte, yOdd bool, curve Curve) (x, y *big.Int, err error) {
 	p := curve.P()
-	x = new(big.Int).SetBytes(data[1:])
+	x = new(big.Int).SetBytes(xBytes)
 	if x.Cmp(p) >= 0 {
 		return nil, nil, ErrInvalidPublicKey
 	}
@@ -192,7 +210,7 @@ func unmarshalCompressed(data []byte, curve Curve) (x, y *big.Int, err error) {
 	if y == nil {
 		return nil, nil, ErrInvalidPublicKey
 	}
-	if byte(y.Bit(0)) != data[0]&1 {
+	if (y.Bit(0) == 1) != yOdd {
 		y.Neg(y).Mod(y, p)
 	}
 	return

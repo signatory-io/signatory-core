@@ -18,6 +18,13 @@ func (s *Signature) Bytes() []byte                        { return s[:] }
 
 type PublicKey [PublicKeySize]byte
 
+func (p *PublicKey) Equal(other crypto.PublicKey) bool {
+	if oth, ok := other.(*PublicKey); ok {
+		return *oth == *p
+	}
+	return false
+}
+
 func (p *PublicKey) PublicKeyType() crypto.Algorithm { return crypto.Ed25519 }
 func (p *PublicKey) Bytes() []byte                   { return p[:] }
 func (p *PublicKey) COSE() cose.Key {
