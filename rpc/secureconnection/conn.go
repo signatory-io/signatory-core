@@ -1,4 +1,4 @@
-package rpc
+package secureconnection
 
 import (
 	"bytes"
@@ -10,21 +10,18 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/rpc/types"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-type Transport interface {
-	io.ReadWriteCloser
-	SetDeadline(t time.Time) error
-}
-
-type EncodedConnection interface {
+type encodedReadWriter interface {
 	ReadMessage(v any) error
 	WriteMessage(v any) error
 }
@@ -53,7 +50,7 @@ func (c *rawConn) WriteMessage(v any) error {
 
 func (c *rawConn) ReadMessage(v any) error { return c.dec.Decode(v) }
 
-func exchange[T any, C EncodedConnection](c C, data *T) (out *T, err error) {
+func exchange[T any, C encodedReadWriter](c C, data *T) (out *T, err error) {
 	out = new(T)
 	errCh := make(chan error)
 	go func() {
@@ -143,7 +140,11 @@ type authMessage struct {
 	ChallengeSignature *ed25519.Signature
 }
 
-func NewConnection(transport Transport, localKey *ed25519.PrivateKey) (*Conn, error) {
+type Authenticator interface {
+	IsAllowed(remoteAddr net.Addr, remoteKey *ed25519.PublicKey) bool
+}
+
+func NewSecureConnection(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (*SecureConn, error) {
 	eph, err := curve().GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
@@ -177,7 +178,7 @@ func NewConnection(transport Transport, localKey *ed25519.PrivateKey) (*Conn, er
 	}
 
 	keys := generateKeys(eph.PublicKey(), remoteEphPub, secret)
-	conn := &Conn{
+	conn := &SecureConn{
 		conn:        transport,
 		readCipher:  newPacketCipher(keys.rdLength, keys.rdPayload),
 		writeCipher: newPacketCipher(keys.wrLength, keys.wrPayload),
@@ -215,6 +216,9 @@ func NewConnection(transport Transport, localKey *ed25519.PrivateKey) (*Conn, er
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
 	if !conn.remotePub.VerifyMessageSignature(authResult.ChallengeSignature, challenge, nil) {
+		return nil, errors.New("rpc: authentication error")
+	}
+	if auth != nil && !auth.IsAllowed(transport.RemoteAddr(), conn.remotePub) {
 		return nil, errors.New("rpc: authentication error")
 	}
 	return conn, nil
@@ -315,18 +319,18 @@ func (p *packetCipher) writePacket(w io.Writer, data []byte) error {
 	return nil
 }
 
-type Conn struct {
-	conn                    Transport
+type SecureConn struct {
+	conn                    net.Conn
 	readCipher, writeCipher packetCipher
 	encBuffer               bytes.Buffer
 	remotePub               *ed25519.PublicKey
 	sessionID               []byte
 }
 
-func (c *Conn) readPacket() ([]byte, error)   { return c.readCipher.readPacket(c.conn) }
-func (c *Conn) writePacket(data []byte) error { return c.writeCipher.writePacket(c.conn, data) }
+func (c *SecureConn) readPacket() ([]byte, error)   { return c.readCipher.readPacket(c.conn) }
+func (c *SecureConn) writePacket(data []byte) error { return c.writeCipher.writePacket(c.conn, data) }
 
-func (c *Conn) ReadMessage(v any) error {
+func (c *SecureConn) ReadMessage(v any) error {
 	packet, err := c.readPacket()
 	if err != nil {
 		return err
@@ -334,7 +338,7 @@ func (c *Conn) ReadMessage(v any) error {
 	return cbor.Unmarshal(packet, v)
 }
 
-func (c *Conn) WriteMessage(v any) error {
+func (c *SecureConn) WriteMessage(v any) error {
 	c.encBuffer.Reset()
 	if err := cbor.MarshalToBuffer(v, &c.encBuffer); err != nil {
 		return err
@@ -342,6 +346,19 @@ func (c *Conn) WriteMessage(v any) error {
 	return c.writePacket(c.encBuffer.Bytes())
 }
 
-func (c *Conn) RemotePublicKey() *ed25519.PublicKey { return c.remotePub }
-func (c *Conn) SessionID() []byte                   { return c.sessionID }
-func (c *Conn) Close() error                        { return c.conn.Close() }
+type AuthenticatedConn interface {
+	SessionID() []byte
+	PeerPublicKey() *ed25519.PublicKey
+}
+
+func (c *SecureConn) PeerPublicKey() *ed25519.PublicKey { return c.remotePub }
+func (c *SecureConn) SessionID() []byte                 { return c.sessionID }
+func (c *SecureConn) Close() error                      { return c.conn.Close() }
+func (c *SecureConn) SetDeadline(t time.Time) error     { return c.conn.SetDeadline(t) }
+func (c *SecureConn) LocalAddr() net.Addr               { return c.conn.LocalAddr() }
+func (c *SecureConn) RemoteAddr() net.Addr              { return c.conn.RemoteAddr() }
+
+var (
+	_ types.EncodedConnection = (*SecureConn)(nil)
+	_ AuthenticatedConn       = (*SecureConn)(nil)
+)

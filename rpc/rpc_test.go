@@ -1,75 +1,38 @@
 package rpc
 
 import (
-	"bytes"
-	"crypto/ecdh"
-	"crypto/rand"
-	"os"
+	"context"
+	"errors"
 	"testing"
 
-	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 )
 
-func TestCipher(t *testing.T) {
-	k1, err := ecdh.X25519().GenerateKey(rand.Reader)
-	require.NoError(t, err)
-	k2, err := ecdh.X25519().GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	pub1 := k1.PublicKey()
-	pub2 := k2.PublicKey()
-
-	var secret [32]byte
-	rand.Read(secret[:])
-
-	keys := generateKeys(pub1, pub2, secret[:])
-	c1 := newPacketCipher(keys.rdLength, keys.rdPayload)
-	c2 := c1
-
-	data := []byte("text")
-	for range 2 {
-		// nonce value must be correctly updated
-		var buf bytes.Buffer
-		require.NoError(t, c1.writePacket(&buf, data))
-		out, err := c2.readPacket(&buf)
-		require.NoError(t, err)
-		require.Equal(t, data, out)
+func TestMethodCall(t *testing.T) {
+	f1 := func(_ context.Context, x int) (int, error) {
+		return x, nil
 	}
+	m1 := NewMethod(f1)
+	arg := int(1)
+	v, _ := cbor.Marshal(&arg)
+	res, err := m1.call(context.Background(), []cbor.RawMessage{v})
+	require.NoError(t, err)
+
+	var r int
+	require.NoError(t, cbor.Unmarshal(res.Result, &r))
+	require.Equal(t, arg, r)
 }
 
-func TestConnection(t *testing.T) {
-	fds, err := unix.Socketpair(unix.AF_LOCAL, unix.SOCK_STREAM, 0)
-	require.NoError(t, err)
-
-	require.NoError(t, unix.SetNonblock(fds[0], true))
-	require.NoError(t, unix.SetNonblock(fds[1], true))
-
-	sock0 := os.NewFile(uintptr(fds[0]), "socket")
-	sock1 := os.NewFile(uintptr(fds[1]), "socket")
-
-	key0, err := ed25519.GeneratePrivateKey()
-	require.NoError(t, err)
-	key1, err := ed25519.GeneratePrivateKey()
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	go func() {
-		conn, err := NewConnection(sock0, key0)
-		conn.Close()
-		errCh <- err
-	}()
-	go func() {
-		conn, err := NewConnection(sock1, key1)
-		conn.Close()
-		errCh <- err
-	}()
-	for range 2 {
-		e := <-errCh
-		if err == nil {
-			err = e
-		}
+func TestMethodCallErr(t *testing.T) {
+	f1 := func(_ context.Context, x int) (int, error) {
+		return 0, errors.New("error")
 	}
+	m1 := NewMethod(f1)
+	arg := int(1)
+	v, _ := cbor.Marshal(&arg)
+	res, err := m1.call(context.Background(), []cbor.RawMessage{v})
 	require.NoError(t, err)
+
+	require.Equal(t, &response{Error: &errorResponse{Message: "error"}}, res)
 }
