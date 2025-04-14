@@ -105,7 +105,7 @@ type Context interface {
 	SessionID() []byte
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
-	PeerPublicKey() *ed25519.PublicKey
+	RemotePublicKey() *ed25519.PublicKey
 }
 
 type Caller interface {
@@ -180,14 +180,8 @@ func NewMethod(f any) *Method {
 	if t.Kind() != reflect.Func {
 		panic("not a function")
 	}
-	if t.NumIn() < 1 {
-		panic("insufficient number of arguments")
-	}
-	if t.In(0) != ctxType {
-		panic("first argument must be context.Context")
-	}
 	if t.NumOut() < 1 {
-		panic("insufficient number of arguments")
+		panic("insufficient number of results")
 	}
 	if t.Out(t.NumOut()-1) != errType {
 		panic("last result must be error")
@@ -246,7 +240,7 @@ var aLongTimeAgo = time.Unix(1, 0)
 var ErrCanceled = errors.New("canceled")
 
 type rpcCtx struct {
-	types.EncodedConnection
+	types.EncodedConn
 	secureconnection.AuthenticatedConn
 	rpc *RPC
 }
@@ -257,13 +251,13 @@ var _ Context = (*rpcCtx)(nil)
 
 type dummyAuth struct{}
 
-func (dummyAuth) SessionID() []byte                 { return nil }
-func (dummyAuth) PeerPublicKey() *ed25519.PublicKey { return nil }
+func (dummyAuth) SessionID() []byte                   { return nil }
+func (dummyAuth) RemotePublicKey() *ed25519.PublicKey { return nil }
 
-func mkCallCtx(ctx context.Context, conn types.EncodedConnection, rpc *RPC) context.Context {
+func mkCallCtx(ctx context.Context, conn types.EncodedConn, rpc *RPC) context.Context {
 	c := rpcCtx{
-		EncodedConnection: conn,
-		rpc:               rpc,
+		EncodedConn: conn,
+		rpc:         rpc,
 	}
 	if auth, ok := conn.(secureconnection.AuthenticatedConn); ok {
 		c.AuthenticatedConn = auth
@@ -273,7 +267,7 @@ func mkCallCtx(ctx context.Context, conn types.EncodedConnection, rpc *RPC) cont
 	return context.WithValue(ctx, rpcCtxKey{}, &c)
 }
 
-func NewRPC(conn types.EncodedConnection, h *Handler) *RPC {
+func New(conn types.EncodedConn, h *Handler) *RPC {
 	in := make(chan message)
 	readErrCh := make(chan error)
 
@@ -400,13 +394,12 @@ func NewRPC(conn types.EncodedConnection, h *Handler) *RPC {
 			err = writeErr
 		}
 
-		// broadcast error
-		bcErr := err
-		if bcErr == nil {
-			bcErr = ErrCanceled
+		broadcastErr := err
+		if broadcastErr == nil {
+			broadcastErr = ErrCanceled
 		}
 		for _, c := range awaiting {
-			c.err <- bcErr
+			c.err <- broadcastErr
 		}
 
 		handlersCancel(ErrCanceled)
@@ -415,9 +408,6 @@ func NewRPC(conn types.EncodedConnection, h *Handler) *RPC {
 		cErr := conn.Close()
 		if err == nil {
 			err = cErr
-		}
-		if err == nil {
-			err = ErrCanceled
 		}
 		rpc.err = err
 		close(done)

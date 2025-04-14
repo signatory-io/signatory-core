@@ -13,12 +13,12 @@ type SecureListener struct {
 	Authenticator Authenticator
 }
 
-func (s *SecureListener) Accept() (types.EncodedConnection, error) {
+func (s *SecureListener) Accept() (types.EncodedConn, error) {
 	conn, err := s.Listener.Accept()
 	if err != nil {
 		return nil, err
 	}
-	return NewSecureConnection(conn, s.PrivateKey, s.Authenticator)
+	return New(conn, s.PrivateKey, s.Authenticator)
 }
 
 func (s *SecureListener) Addr() net.Addr { return s.Listener.Addr() }

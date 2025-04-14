@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-type EncodedConnection interface {
+type EncodedConn interface {
 	io.Closer
 	ReadMessage(v any) error
 	WriteMessage(v any) error
@@ -16,7 +16,7 @@ type EncodedConnection interface {
 }
 
 type EncodedListener interface {
-	Accept() (EncodedConnection, error)
+	Accept() (EncodedConn, error)
 	Close() error
 	Addr() net.Addr
 }

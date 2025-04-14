@@ -58,13 +58,13 @@ func TestConnection(t *testing.T) {
 	errCh := make(chan error)
 	go func() {
 		fc, _ := net.FileConn(sock0)
-		conn, err := NewSecureConnection(fc, key0, nil)
+		conn, err := New(fc, key0, nil)
 		conn.Close()
 		errCh <- err
 	}()
 	go func() {
 		fc, _ := net.FileConn(sock1)
-		conn, err := NewSecureConnection(fc, key1, nil)
+		conn, err := New(fc, key1, nil)
 		conn.Close()
 		errCh <- err
 	}()
