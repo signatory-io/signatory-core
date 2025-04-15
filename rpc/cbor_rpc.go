@@ -77,8 +77,6 @@ func (e *errorResponse) ErrorContent(v any) (ok bool, err error) {
 	return true, nil
 }
 
-var _ ErrorEx = (*errorResponse)(nil)
-
 type Method struct {
 	fn reflect.Value
 }
@@ -96,6 +94,9 @@ func mkErrorResponse(err error, code int) *response {
 		}
 	} else {
 		ret.Code = code
+	}
+	if ret.Code == 0 {
+		ret.Code = CodeInternalError
 	}
 	return &response{Error: ret}
 }
@@ -455,7 +456,10 @@ func (r *RPC) Call(ctx context.Context, result any, objPath, method string, args
 	if res.Error != nil {
 		return res.Error
 	}
-	return cbor.Unmarshal(res.Result, result)
+	if res.Result != nil && result != nil {
+		return cbor.Unmarshal(res.Result, result)
+	}
+	return nil
 }
 
 func (r *RPC) Close() error {

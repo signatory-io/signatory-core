@@ -52,6 +52,29 @@ func (c Curve) Algorithm() crypto.Algorithm {
 	}
 }
 
+func CurveFromAlgorithm(alg crypto.Algorithm) Curve {
+	switch alg {
+	case crypto.ECDSA_P256:
+		return NIST_P256
+	case crypto.ECDSA_P384:
+		return NIST_P384
+	case crypto.ECDSA_P521:
+		return NIST_P521
+	case crypto.ECDSA_Secp256k1:
+		return Secp256k1
+	case crypto.ECDSA_BrainpoolP256r1:
+		return BrainpoolP256r1
+	case crypto.ECDSA_BrainpoolP320r1:
+		return BrainpoolP320r1
+	case crypto.ECDSA_BrainpoolP384r1:
+		return BrainpoolP384r1
+	case crypto.ECDSA_BrainpoolP512r1:
+		return BrainpoolP512r1
+	default:
+		return 0
+	}
+}
+
 func (c Curve) FieldBytes() int {
 	switch c {
 	case NIST_P256:

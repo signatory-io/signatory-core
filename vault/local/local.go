@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"crypto/pbkdf2"
+	"crypto/rand"
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/signatory-io/signatory-core/crypto"
 	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
+	"github.com/signatory-io/signatory-core/crypto/keygen"
 	"github.com/signatory-io/signatory-core/vault"
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -23,13 +25,14 @@ type keyData struct {
 	PlainPrivateKey     string `json:"plain_private_key,omitempty"`
 	EncryptedPrivateKey string `json:"encrypted_private_key,omitempty"`
 	Salt                string `json:"salt"`
-	Nonce               string `json:"nonce"`
 }
 
 const (
 	encIterations = 32768
 	encKeyLen     = 32
 )
+
+const storeDir = "key_store"
 
 type decryptError struct {
 	error
@@ -44,17 +47,12 @@ func (k *keyData) decrypt(pass []byte) ([]byte, error) {
 	}
 	key, err := pbkdf2.Key(sha512.New, string(pass), salt, encIterations, encKeyLen)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	cipher, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		return nil, err
-	}
-
-	nonce, err := hex.DecodeString(k.Nonce)
-	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	ciphertext, err := hex.DecodeString(k.EncryptedPrivateKey)
@@ -62,7 +60,8 @@ func (k *keyData) decrypt(pass []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	out, err := cipher.Open(nil, nonce, ciphertext, nil)
+	var nonce [chacha20poly1305.NonceSizeX]byte
+	out, err := cipher.Open(nil, nonce[:], ciphertext, nil)
 	if err != nil {
 		return nil, decryptError{error: err}
 	}
@@ -80,6 +79,14 @@ func readKeyFile(name string) (*keyData, error) {
 	}
 	out := new(keyData)
 	return out, json.Unmarshal(data, out)
+}
+
+func writeKeyFile(name string, data *keyData) error {
+	buf, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(name, buf, 0700)
 }
 
 type decryptedKey struct {
@@ -104,7 +111,7 @@ type localKey struct {
 func (l *localKey) Algorithm() crypto.Algorithm { return l.pub.PublicKeyType() }
 func (l *localKey) PublicKey() crypto.PublicKey { return l.pub }
 
-func (l *localKey) getSigner(ctx context.Context, sc vault.SignContext) (crypto.LocalSigner, error) {
+func (l *localKey) getSigner(ctx context.Context, sc vault.SecretManager) (crypto.LocalSigner, error) {
 	l.mtx.RLock()
 	dec := l.decrypted
 	l.mtx.RUnlock()
@@ -126,26 +133,34 @@ func (l *localKey) getSigner(ctx context.Context, sc vault.SignContext) (crypto.
 		return nil, err
 	}
 	signer, ok := priv.(crypto.LocalSigner)
-	if !ok {
+	if !ok || !signer.IsAvailable() {
 		return nil, fmt.Errorf("%T has no local implementation", priv)
 	}
 	return signer, nil
 }
 
-func (l *localKey) SignMessage(ctx context.Context, message []byte, sc vault.SignContext, opts crypto.SignOptions) (crypto.Signature, error) {
+func (l *localKey) SignMessage(ctx context.Context, message []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
 	signer, err := l.getSigner(ctx, sc)
 	if err != nil {
-		return nil, err
+		return nil, vault.WrapError(l.v, err)
 	}
-	return signer.SignMessage(message, opts)
+	sig, err := signer.SignMessage(message, opts)
+	if err != nil {
+		return nil, vault.WrapError(l.v, err)
+	}
+	return sig, nil
 }
 
-func (l *localKey) SignDigest(ctx context.Context, digest []byte, sc vault.SignContext, opts crypto.SignOptions) (crypto.Signature, error) {
+func (l *localKey) SignDigest(ctx context.Context, digest []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
 	signer, err := l.getSigner(ctx, sc)
 	if err != nil {
-		return nil, err
+		return nil, vault.WrapError(l.v, err)
 	}
-	return signer.SignDigest(digest, opts)
+	sig, err := signer.SignDigest(digest, opts)
+	if err != nil {
+		return nil, vault.WrapError(l.v, err)
+	}
+	return sig, nil
 }
 
 func (l *localKey) Vault() vault.Vault { return l.v }
@@ -156,7 +171,7 @@ func (l *localKey) IsLocked() bool {
 	return l.decrypted == nil
 }
 
-func (l *localKey) Unlock(ctx context.Context, uc vault.SignContext) error {
+func (l *localKey) Unlock(ctx context.Context, uc vault.SecretManager) error {
 	l.mtx.RLock()
 	if l.decrypted != nil {
 		l.mtx.RUnlock()
@@ -167,19 +182,19 @@ func (l *localKey) Unlock(ctx context.Context, uc vault.SignContext) error {
 	pkh := crypto.NewPublicKeyHash(l.pub)
 	pwd, err := uc.GetSecret(ctx, &pkh, l.pub.PublicKeyType())
 	if err != nil {
-		return err
+		return vault.WrapError(l.v, err)
 	}
 	decBytes, err := l.data.decrypt(pwd)
 	if err != nil {
-		return err
+		return vault.WrapError(l.v, err)
 	}
 	priv, err := cosekey.ParsePrivateKey(decBytes)
 	if err != nil {
-		return err
+		return vault.WrapError(l.v, err)
 	}
 	signer, ok := priv.(crypto.LocalSigner)
-	if !ok {
-		return fmt.Errorf("%T has no local implementation", priv)
+	if !ok || !signer.IsAvailable() {
+		return vault.WrapError(l.v, fmt.Errorf("%T has no local implementation", priv))
 	}
 
 	dec := &decryptedKey{
@@ -212,7 +227,7 @@ type keyIter struct {
 	err     error
 }
 
-func (it *keyIter) Err() error { return it.err }
+func (it *keyIter) Err() error { return vault.WrapError(it.v, it.err) }
 func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 	if it.err != nil {
 		return func(func(vault.KeyReference) bool) {}
@@ -224,16 +239,19 @@ func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 			}
 
 			filePath := filepath.Join(it.dir, entry.Name())
-			var kd *keyData
-			if kd, it.err = readKeyFile(filePath); it.err != nil {
+			kd, err := readKeyFile(filePath)
+			if err != nil {
+				it.err = err
 				return
 			}
-			var pubData []byte
-			if pubData, it.err = kd.pub(); it.err != nil {
+			pubData, err := kd.pub()
+			if err != nil {
+				it.err = err
 				return
 			}
-			var pub crypto.PublicKey
-			if pub, it.err = cosekey.ParsePublicKey(pubData); it.err != nil {
+			pub, err := cosekey.ParsePublicKey(pubData)
+			if err != nil {
+				it.err = err
 				return
 			}
 			key := localKey{
@@ -243,16 +261,18 @@ func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 			}
 
 			if !kd.isEncrypted() {
-				var privData []byte
-				if privData, it.err = kd.plainPriv(); it.err != nil {
+				privData, err := kd.plainPriv()
+				if err != nil {
+					it.err = err
 					return
 				}
-				var priv crypto.PrivateKey
-				if priv, it.err = cosekey.ParsePrivateKey(privData); it.err != nil {
+				priv, err := cosekey.ParsePrivateKey(privData)
+				if err != nil {
+					it.err = err
 					return
 				}
 				signer, ok := priv.(crypto.LocalSigner)
-				if !ok {
+				if !ok || !signer.IsAvailable() {
 					it.err = fmt.Errorf("%T has no local implementation", priv)
 					return
 				}
@@ -277,7 +297,7 @@ func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 func (l *LocalVault) List(ctx context.Context, filter []crypto.Algorithm) vault.KeyIterator {
 	dir, err := os.ReadDir(l.storeDir)
 	if err != nil {
-		return errIter{err: err}
+		return errIter{err: vault.WrapError(l, err)}
 	}
 	return &keyIter{
 		v:       l,
@@ -288,4 +308,112 @@ func (l *LocalVault) List(ctx context.Context, filter []crypto.Algorithm) vault.
 
 func (l *LocalVault) Close(ctx context.Context) error         { return nil }
 func (l *LocalVault) Ready(ctx context.Context) (bool, error) { return true, nil }
-func (l *LocalVault) Name() string                            { return fmt.Sprintf("local/%s", l.storeDir) }
+func (l *LocalVault) InstanceInfo() string                    { return fmt.Sprintf("local/%s", l.storeDir) }
+func (l *LocalVault) Name() string                            { return "local" }
+
+func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vault.SecretManager, options vault.Options) (vault.KeyReference, error) {
+	encrypt := false
+	if v, ok := options["encrypt"]; ok {
+		if b, ok := v.(bool); ok {
+			encrypt = b
+		} else {
+			return nil, vault.WrapError(l, fmt.Errorf("invalid value type %T", v))
+		}
+	}
+
+	priv, err := keygen.GeneratePrivateKey(alg)
+	if err != nil {
+		return nil, vault.WrapError(l, err)
+	}
+	signer, ok := priv.(crypto.LocalSigner)
+	if !ok || !signer.IsAvailable() {
+		return nil, vault.WrapError(l, fmt.Errorf("%T has no local implementation", priv))
+	}
+
+	binPriv := signer.COSE().Encode()
+	pub := signer.Public()
+	pkh := crypto.NewPublicKeyHash(pub)
+
+	data := keyData{
+		PublicKey: hex.EncodeToString(pub.COSE().Encode()),
+	}
+
+	key := localKey{
+		pub:  pub,
+		data: &data,
+		v:    l,
+	}
+
+	if encrypt {
+		secret, err := sm.GetSecret(ctx, &pkh, alg)
+		if err != nil {
+			return nil, vault.WrapError(l, err)
+		}
+		var salt [16]byte
+		rand.Read(salt[:])
+
+		key, err := pbkdf2.Key(sha512.New, string(secret), salt[:], encIterations, encKeyLen)
+		if err != nil {
+			panic(err)
+		}
+		cipher, err := chacha20poly1305.NewX(key)
+		if err != nil {
+			panic(err)
+		}
+		var nonce [chacha20poly1305.NonceSizeX]byte
+		encrypted := cipher.Seal(nil, nonce[:], binPriv, nil)
+
+		data.EncryptedPrivateKey = hex.EncodeToString(encrypted)
+		data.Salt = hex.EncodeToString(salt[:])
+	} else {
+		data.PlainPrivateKey = hex.EncodeToString(binPriv)
+		key.decrypted = &decryptedKey{
+			pub:  pub,
+			priv: signer,
+		}
+	}
+
+	name := filepath.Join(l.storeDir, hex.EncodeToString(pkh[:]))
+	if err := writeKeyFile(name, &data); err != nil {
+		return nil, vault.WrapError(l, err)
+	}
+
+	return &key, nil
+}
+
+var genOpts = map[string]vault.OptDesc{
+	"encrypt": {
+		Type: vault.OptBool,
+		Desc: "Encrypt key with password",
+	},
+}
+
+func (l *LocalVault) GenerateOptions() map[string]vault.OptDesc { return genOpts }
+
+var (
+	_ vault.Unlocker  = (*localKey)(nil)
+	_ vault.Generator = (*LocalVault)(nil)
+)
+
+func New(storeDir string) (*LocalVault, error) {
+	if err := os.MkdirAll(storeDir, 0700); err != nil {
+		return nil, err
+	}
+	return &LocalVault{
+		storeDir:      "",
+		decryptedKeys: make(map[crypto.PublicKeyHash]*decryptedKey),
+	}, nil
+}
+
+type fact struct{}
+
+func (fact) New(ctx context.Context, opt vault.GlobalOptions, config any) (vault.Vault, error) {
+	dir := filepath.Join(opt.BasePath(), storeDir)
+	return New(dir)
+}
+
+func (fact) DefaultConfig() any { return nil }
+
+func init() {
+	vault.Register("local", fact{})
+}

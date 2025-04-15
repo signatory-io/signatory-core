@@ -54,7 +54,7 @@ func getHash(opts crypto.SignOptions) crypto.Hash {
 	return nil
 }
 
-func (k *kmsKey) SignMessage(ctx context.Context, message []byte, sc vault.SignContext, opts crypto.SignOptions) (crypto.Signature, error) {
+func (k *kmsKey) SignMessage(ctx context.Context, message []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
 	var hash crypto.Hash
 	if h := getHash(opts); h != nil {
 		hash = h
@@ -66,9 +66,9 @@ func (k *kmsKey) SignMessage(ctx context.Context, message []byte, sc vault.SignC
 	return k.SignDigest(ctx, h.Sum(nil), sc, opts)
 }
 
-func (k *kmsKey) SignDigest(ctx context.Context, digest []byte, sc vault.SignContext, opts crypto.SignOptions) (crypto.Signature, error) {
+func (k *kmsKey) SignDigest(ctx context.Context, digest []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
 	if len(digest) != crypto.SHA256.Size() {
-		return nil, fmt.Errorf("digest must be %d bytes long", crypto.SHA256.Size())
+		return nil, vault.WrapError(k.v, fmt.Errorf("digest must be %d bytes long", crypto.SHA256.Size()))
 	}
 	out, err := k.v.client.Sign(ctx, &kms.SignInput{
 		KeyId:            k.id,
@@ -77,17 +77,17 @@ func (k *kmsKey) SignDigest(ctx context.Context, digest []byte, sc vault.SignCon
 		SigningAlgorithm: types.SigningAlgorithmSpecEcdsaSha256,
 	})
 	if err != nil {
-		return nil, err
+		return nil, vault.WrapError(k.v, err)
 	}
 	sig, err := ecdsa.NewSignatureFromDERBytes(out.Signature, k.pub.Curve)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", *k.id, err)
+		return nil, vault.WrapError(k.v, fmt.Errorf("%s: %w", *k.id, err))
 	}
 	if opts, ok := opts.(*ecdsa.Options); ok {
 		if opts.GenerateRecoveryCode {
 			sig, err = ecdsa.GenerateRecoveryCode(sig, k.pub, digest)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", *k.id, err)
+				return nil, vault.WrapError(k.v, fmt.Errorf("%s: %w", *k.id, err))
 			}
 		}
 	}
@@ -122,12 +122,15 @@ func (it *kmsIterator) Keys() iter.Seq[vault.KeyReference] {
 					Marker: out.NextMarker,
 				}
 			}
-			if out, it.err = it.v.client.ListKeys(it.ctx, inp); it.err != nil {
+			var err error
+			if out, err = it.v.client.ListKeys(it.ctx, inp); it.err != nil {
+				it.err = vault.WrapError(it.v, err)
 				return
 			}
 			for _, entry := range out.Keys {
-				var key *kmsKey
-				if key, it.err = it.v.getPublicKey(it.ctx, entry.KeyId, it.filter); it.err != nil {
+				key, err := it.v.getPublicKey(it.ctx, entry.KeyId, it.filter)
+				if err != nil {
+					it.err = vault.WrapError(it.v, err)
 					return
 				}
 				if key != nil && !yield(key) {
@@ -187,7 +190,9 @@ func (v *KMSVault) List(ctx context.Context, filter []crypto.Algorithm) vault.Ke
 	}
 }
 
-func (v *KMSVault) Name() string { return "AWS KMS" }
+func (v *KMSVault) InstanceInfo() string { return "AWS KMS" }
+
+func (v *KMSVault) Name() string { return "awskms" }
 
 func (v *KMSVault) Close(context.Context) error { return nil }
 

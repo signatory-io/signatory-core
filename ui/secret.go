@@ -10,7 +10,7 @@ type InteractiveSecretManager struct {
 	UI UI
 }
 
-func (m *InteractiveSecretManager) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm) ([]byte, error) {
+func (m InteractiveSecretManager) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm) ([]byte, error) {
 	var password string
 	items := []Item{
 		&Message{

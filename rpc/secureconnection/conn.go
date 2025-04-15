@@ -164,11 +164,9 @@ func New(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	if helloResult.AuthPublicKey == nil && localKey != nil || helloResult.AuthPublicKey != nil && localKey == nil {
-		return nil, errors.New("rpc: inconsistent authentication settings")
+	if helloResult.AuthPublicKey == nil || helloResult.EphemeralPublicKey == nil {
+		return nil, errors.New("rpc: invalid handshake message")
 	}
-	authenticate := localKey != nil
-
 	if auth != nil && !auth.IsConnectionAllowed(transport.RemoteAddr(), helloResult.AuthPublicKey) {
 		return nil, errors.New("rpc: connection disallowed")
 	}
@@ -177,25 +175,15 @@ func New(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
+	remotePub := helloResult.AuthPublicKey
 
 	secret, err := eph.ECDH(remoteEphPub)
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
 
-	keys := generateKeys(eph.PublicKey(), remoteEphPub, secret)
-	conn := &SecureConn{
-		conn:        transport,
-		readCipher:  newPacketCipher(keys.rdLength, keys.rdPayload),
-		writeCipher: newPacketCipher(keys.wrLength, keys.wrPayload),
-	}
-
-	if !authenticate {
-		return conn, nil
-	}
-	conn.remotePub = helloResult.AuthPublicKey
 	combinedEphKeys := combineKeys(eph.PublicKey().Bytes(), remoteEphPub.Bytes())
-	combinedAuthKeys := combineKeys(localPub[:], conn.remotePub[:])
+	combinedAuthKeys := combineKeys(localPub[:], remotePub[:])
 
 	ch, _ := blake2b.New256(nil)
 	ch.Write([]byte(tagSuite))
@@ -207,26 +195,37 @@ func New(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (
 	ch.Write(secret)
 	challenge := ch.Sum(nil)
 
-	conn.sessionID = challenge
-
 	s, err := localKey.SignMessage(challenge, nil)
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
 	sig := s.(*ed25519.Signature)
 
-	authResult, err := exchange(conn, &authMessage{
+	authResult, err := exchange(rawConn, &authMessage{
 		ChallengeSignature: sig,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	if !conn.remotePub.VerifyMessageSignature(authResult.ChallengeSignature, challenge, nil) {
+	if authResult.ChallengeSignature == nil {
+		return nil, errors.New("rpc: invalid handshake message")
+	}
+	if !remotePub.VerifyMessageSignature(authResult.ChallengeSignature, challenge, nil) {
 		return nil, errors.New("rpc: authentication error")
 	}
-	if auth != nil && !auth.IsAuthenticatedPeerAllowed(transport.RemoteAddr(), conn.remotePub) {
+	if auth != nil && !auth.IsAuthenticatedPeerAllowed(transport.RemoteAddr(), remotePub) {
 		return nil, errors.New("rpc: authentication error")
 	}
+
+	keys := generateKeys(eph.PublicKey(), remoteEphPub, secret)
+	conn := &SecureConn{
+		conn:        transport,
+		readCipher:  newPacketCipher(keys.rdLength, keys.rdPayload),
+		writeCipher: newPacketCipher(keys.wrLength, keys.wrPayload),
+		remotePub:   helloResult.AuthPublicKey,
+		sessionID:   challenge,
+	}
+
 	return conn, nil
 }
 

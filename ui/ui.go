@@ -10,16 +10,16 @@ type Item interface {
 }
 
 type Message struct {
-	Label   string
-	Message string
+	Label   string `cbor:"0,keyasint,omitempty"`
+	Message string `cbor:"1,keyasint,omitempty"`
 }
 
 func (*Message) DialogItem() {}
 
 type Fingerprint struct {
-	Label       string
-	Header      string
-	Fingerprint []byte
+	Label       string `cbor:"0,keyasint,omitempty"`
+	Header      string `cbor:"1,keyasint,omitempty"`
+	Fingerprint []byte `cbor:"2,keyasint,omitempty"`
 }
 
 func (*Fingerprint) DialogItem() {}
