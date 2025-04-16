@@ -21,10 +21,10 @@ import (
 )
 
 type keyData struct {
-	PublicKey           string `json:"public_key"`
-	PlainPrivateKey     string `json:"plain_private_key,omitempty"`
-	EncryptedPrivateKey string `json:"encrypted_private_key,omitempty"`
-	Salt                string `json:"salt"`
+	PublicKey           string `json:"public"`
+	PrivateKey          string `json:"private,omitempty"`
+	EncryptedPrivateKey string `json:"encrypted_private,omitempty"`
+	Salt                string `json:"salt,omitempty"`
 }
 
 const (
@@ -68,9 +68,9 @@ func (k *keyData) decrypt(pass []byte) ([]byte, error) {
 	return out, nil
 }
 
-func (k *keyData) isEncrypted() bool          { return k.PlainPrivateKey == "" }
+func (k *keyData) isEncrypted() bool          { return k.PrivateKey == "" }
 func (k *keyData) pub() ([]byte, error)       { return hex.DecodeString(k.PublicKey) }
-func (k *keyData) plainPriv() ([]byte, error) { return hex.DecodeString(k.PlainPrivateKey) }
+func (k *keyData) plainPriv() ([]byte, error) { return hex.DecodeString(k.PrivateKey) }
 
 func readKeyFile(name string) (*keyData, error) {
 	data, err := os.ReadFile(name)
@@ -111,7 +111,7 @@ type localKey struct {
 func (l *localKey) Algorithm() crypto.Algorithm { return l.pub.PublicKeyType() }
 func (l *localKey) PublicKey() crypto.PublicKey { return l.pub }
 
-func (l *localKey) getSigner(ctx context.Context, sc vault.SecretManager) (crypto.LocalSigner, error) {
+func (l *localKey) getSigner(ctx context.Context, sm vault.SecretManager) (crypto.LocalSigner, error) {
 	l.mtx.RLock()
 	dec := l.decrypted
 	l.mtx.RUnlock()
@@ -120,7 +120,7 @@ func (l *localKey) getSigner(ctx context.Context, sc vault.SecretManager) (crypt
 	}
 
 	pkh := crypto.NewPublicKeyHash(l.pub)
-	pwd, err := sc.GetSecret(ctx, &pkh, l.pub.PublicKeyType())
+	pwd, err := sm.GetSecret(ctx, &pkh, l.pub.PublicKeyType())
 	if err != nil {
 		return nil, err
 	}
@@ -222,6 +222,7 @@ func (e errIter) Err() error { return e.err }
 
 type keyIter struct {
 	v       *LocalVault
+	filter  map[crypto.Algorithm]struct{}
 	dir     string
 	entries []os.DirEntry
 	err     error
@@ -253,6 +254,9 @@ func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 			if err != nil {
 				it.err = err
 				return
+			}
+			if _, ok := it.filter[pub.PublicKeyType()]; it.filter != nil && !ok {
+				continue
 			}
 			key := localKey{
 				pub:  pub,
@@ -299,10 +303,18 @@ func (l *LocalVault) List(ctx context.Context, filter []crypto.Algorithm) vault.
 	if err != nil {
 		return errIter{err: vault.WrapError(l, err)}
 	}
+	var f map[crypto.Algorithm]struct{}
+	if filter != nil {
+		f = make(map[crypto.Algorithm]struct{})
+		for _, alg := range filter {
+			f[alg] = struct{}{}
+		}
+	}
 	return &keyIter{
 		v:       l,
 		dir:     l.storeDir,
 		entries: dir,
+		filter:  f,
 	}
 }
 
@@ -366,7 +378,7 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 		data.EncryptedPrivateKey = hex.EncodeToString(encrypted)
 		data.Salt = hex.EncodeToString(salt[:])
 	} else {
-		data.PlainPrivateKey = hex.EncodeToString(binPriv)
+		data.PrivateKey = hex.EncodeToString(binPriv)
 		key.decrypted = &decryptedKey{
 			pub:  pub,
 			priv: signer,
@@ -400,7 +412,7 @@ func New(storeDir string) (*LocalVault, error) {
 		return nil, err
 	}
 	return &LocalVault{
-		storeDir:      "",
+		storeDir:      storeDir,
 		decryptedKeys: make(map[crypto.PublicKeyHash]*decryptedKey),
 	}, nil
 }

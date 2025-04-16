@@ -1,4 +1,4 @@
-package rpcui
+package ui
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/rpc"
-	"github.com/signatory-io/signatory-core/rpc/secureconnection"
+	"github.com/signatory-io/signatory-core/rpc/secureconn"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
@@ -64,7 +64,7 @@ func TestRPCUI(t *testing.T) {
 		var h rpc.Handler
 		h.Register(svc)
 
-		sc, err := secureconnection.New(conn0, k0, nil)
+		sc, err := secureconn.New(conn0, k0, nil)
 		require.NoError(t, err)
 		rpc := rpc.New(sc, &h)
 		<-rpc.Done()
@@ -73,7 +73,7 @@ func TestRPCUI(t *testing.T) {
 	t.Run("client", func(t *testing.T) {
 		t.Parallel()
 
-		sc, err := secureconnection.New(conn1, k1, nil)
+		sc, err := secureconn.New(conn1, k1, nil)
 		require.NoError(t, err)
 		rpc := rpc.New(sc, nil)
 

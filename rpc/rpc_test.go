@@ -9,7 +9,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/secureconnection"
+	"github.com/signatory-io/signatory-core/rpc/secureconn"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
@@ -74,7 +74,7 @@ func TestRPC(t *testing.T) {
 	}
 	t.Run("peer0", func(t *testing.T) {
 		t.Parallel()
-		sc, err := secureconnection.New(conn0, k0, nil)
+		sc, err := secureconn.New(conn0, k0, nil)
 		require.NoError(t, err)
 		rpc := New(sc, &h)
 
@@ -96,7 +96,7 @@ func TestRPC(t *testing.T) {
 
 	t.Run("peer1", func(t *testing.T) {
 		t.Parallel()
-		sc, err := secureconnection.New(conn1, k1, nil)
+		sc, err := secureconn.New(conn1, k1, nil)
 		require.NoError(t, err)
 		rpc := New(sc, &h)
 

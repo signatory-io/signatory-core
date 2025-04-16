@@ -1,4 +1,4 @@
-package rpcui
+package ui
 
 import (
 	"context"

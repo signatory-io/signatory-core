@@ -1,4 +1,4 @@
-package secureconnection
+package secureconn
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/rpc/conn"
 	"github.com/signatory-io/signatory-core/rpc/types"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20"
@@ -25,30 +26,6 @@ type encodedReadWriter interface {
 	ReadMessage(v any) error
 	WriteMessage(v any) error
 }
-
-type rawConn struct {
-	conn      io.ReadWriter
-	encBuffer bytes.Buffer
-	dec       *cbor.Decoder
-}
-
-func newRawConn(conn io.ReadWriter) *rawConn {
-	return &rawConn{
-		dec:  cbor.NewDecoder(conn),
-		conn: conn,
-	}
-}
-
-func (c *rawConn) WriteMessage(v any) error {
-	c.encBuffer.Reset()
-	if err := cbor.MarshalToBuffer(v, &c.encBuffer); err != nil {
-		return err
-	}
-	_, err := c.conn.Write(c.encBuffer.Bytes())
-	return err
-}
-
-func (c *rawConn) ReadMessage(v any) error { return c.dec.Decode(v) }
 
 func exchange[T any, C encodedReadWriter](c C, data *T) (out *T, err error) {
 	out = new(T)
@@ -151,7 +128,7 @@ func New(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	rawConn := newRawConn(transport)
+	rawConn := conn.New(transport)
 
 	var localPub *ed25519.PublicKey
 	if localKey != nil {

@@ -57,8 +57,8 @@ const (
 )
 
 type OptDesc struct {
-	Type OptType
-	Desc string
+	Type OptType `cbor:"0,keyasint"`
+	Desc string  `cbor:"1,keyasint"`
 }
 
 type Options map[string]any

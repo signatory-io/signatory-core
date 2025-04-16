@@ -13,7 +13,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/secureconnection"
+	"github.com/signatory-io/signatory-core/rpc/secureconn"
 	"github.com/signatory-io/signatory-core/rpc/types"
 )
 
@@ -242,7 +242,7 @@ var ErrCanceled = errors.New("canceled")
 
 type rpcCtx struct {
 	types.EncodedConn
-	secureconnection.AuthenticatedConn
+	secureconn.AuthenticatedConn
 	rpc *RPC
 }
 
@@ -260,7 +260,7 @@ func mkCallCtx(ctx context.Context, conn types.EncodedConn, rpc *RPC) context.Co
 		EncodedConn: conn,
 		rpc:         rpc,
 	}
-	if auth, ok := conn.(secureconnection.AuthenticatedConn); ok {
+	if auth, ok := conn.(secureconn.AuthenticatedConn); ok {
 		c.AuthenticatedConn = auth
 	} else {
 		c.AuthenticatedConn = dummyAuth{}

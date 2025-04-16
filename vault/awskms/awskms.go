@@ -179,9 +179,12 @@ func (v *KMSVault) getPublicKey(ctx context.Context, keyID *string, filter map[c
 
 // List returns a list of keys stored under the backend
 func (v *KMSVault) List(ctx context.Context, filter []crypto.Algorithm) vault.KeyIterator {
-	f := make(map[crypto.Algorithm]struct{})
-	for _, alg := range filter {
-		f[alg] = struct{}{}
+	var f map[crypto.Algorithm]struct{}
+	if filter != nil {
+		f = make(map[crypto.Algorithm]struct{})
+		for _, alg := range filter {
+			f[alg] = struct{}{}
+		}
 	}
 	return &kmsIterator{
 		ctx:    ctx,

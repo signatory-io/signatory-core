@@ -1,4 +1,4 @@
-package secureconnection
+package secureconn
 
 import (
 	"net"

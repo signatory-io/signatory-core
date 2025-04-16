@@ -14,7 +14,9 @@ import (
 	"golang.org/x/term"
 )
 
-type Terminal struct{}
+type Terminal struct {
+	mtx sync.Mutex
+}
 
 var aLongTimeAgo = time.Unix(1, 0)
 
@@ -45,10 +47,12 @@ func readCtx(ctx context.Context, r *os.File, readFunc func() (string, error)) (
 	return line, err
 }
 
-func (Terminal) Dialog(ctx context.Context, dialog *Dialog) error {
+func (t *Terminal) Dialog(ctx context.Context, dialog *Dialog) error {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return errors.New("standard input is not a terminal")
 	}
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 
 	state, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
@@ -57,14 +61,14 @@ func (Terminal) Dialog(ctx context.Context, dialog *Dialog) error {
 	defer term.Restore(int(os.Stdin.Fd()), state)
 
 	stdin := stdinPipe()
-	t := term.NewTerminal(struct {
+	tr := term.NewTerminal(struct {
 		io.Reader
 		io.Writer
 	}{stdin, os.Stdout}, "")
 
-	fmt.Fprintln(t, "")
+	fmt.Fprintln(tr, "")
 	if dialog.Title != "" {
-		fmt.Fprintf(t, "# %s\n", dialog.Title)
+		fmt.Fprintf(tr, "# %s\n", dialog.Title)
 	}
 	for _, item := range dialog.Items {
 		switch item := item.(type) {
@@ -72,37 +76,37 @@ func (Terminal) Dialog(ctx context.Context, dialog *Dialog) error {
 			if item.Label != "" {
 				if strings.ContainsRune(item.Message, '\n') {
 					// multi line message
-					fmt.Fprintf(t, "%s:\n", item.Label)
+					fmt.Fprintf(tr, "%s:\n", item.Label)
 				} else {
-					fmt.Fprintf(t, "%s: ", item.Label)
+					fmt.Fprintf(tr, "%s: ", item.Label)
 				}
 			}
-			fmt.Fprintln(t, item.Message)
+			fmt.Fprintln(tr, item.Message)
 
 		case *Fingerprint:
 			if item.Label != "" {
-				fmt.Fprintf(t, "%s:\n", item.Label)
+				fmt.Fprintf(tr, "%s:\n", item.Label)
 			}
-			t.Write(utils.FingerprintRandomArt(item.Header, item.Fingerprint))
+			tr.Write(utils.FingerprintRandomArt(item.Header, item.Fingerprint))
 
 		case *Input:
-			t.SetPrompt(item.Prompt + ": ")
-			v, err := readCtx(ctx, stdin, t.ReadLine)
+			tr.SetPrompt(item.Prompt + ": ")
+			v, err := readCtx(ctx, stdin, tr.ReadLine)
 			if err != nil {
 				return err
 			}
 			*item.Value = string(v)
 
 		case *Password:
-			v, err := readCtx(ctx, stdin, func() (string, error) { return t.ReadPassword(item.Prompt + ": ") })
+			v, err := readCtx(ctx, stdin, func() (string, error) { return tr.ReadPassword(item.Prompt + ": ") })
 			if err != nil {
 				return err
 			}
 			*item.Value = string(v)
 
 		case *Confirmation:
-			t.SetPrompt(item.Prompt + " [yes/No]: ")
-			v, err := readCtx(ctx, stdin, t.ReadLine)
+			tr.SetPrompt(item.Prompt + " [yes/No]: ")
+			v, err := readCtx(ctx, stdin, tr.ReadLine)
 			if err != nil {
 				return err
 			}
@@ -115,7 +119,10 @@ func (Terminal) Dialog(ctx context.Context, dialog *Dialog) error {
 	return nil
 }
 
-func (Terminal) ErrorMessage(ctx context.Context, msg string) error {
+func (t *Terminal) ErrorMessage(ctx context.Context, msg string) error {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+
 	fmt.Printf("Error: %s", msg)
 	return nil
 }
@@ -129,4 +136,4 @@ var stdinPipe = sync.OnceValue(func() *os.File {
 	return r
 })
 
-var _ UI = Terminal{}
+var _ UI = (*Terminal)(nil)
