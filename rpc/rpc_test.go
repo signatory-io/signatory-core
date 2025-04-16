@@ -39,7 +39,7 @@ func TestMethodCallErr(t *testing.T) {
 	res, err := m1.call(context.Background(), []cbor.RawMessage{v})
 	require.NoError(t, err)
 
-	require.Equal(t, &response{Error: &errorResponse{Message: "error"}}, res)
+	require.Equal(t, &response{Error: &errorResponse{Message: "error", Code: CodeInternalError}}, res)
 }
 
 func TestRPC(t *testing.T) {
@@ -64,7 +64,7 @@ func TestRPC(t *testing.T) {
 			"obj": {
 				"add": NewMethod(func(x, y int) (int, error) { return x + y, nil }),
 				"with_ctx": NewMethod(func(ctx context.Context, x, y int) (int, *ed25519.PublicKey, error) {
-					c := GetContext(ctx)
+					c := GetContext(ctx).(AuthenticatedContext)
 					pub := c.RemotePublicKey()
 					require.NotNil(t, pub)
 					return x + y, pub, nil

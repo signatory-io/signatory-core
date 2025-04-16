@@ -103,9 +103,13 @@ func mkErrorResponse(err error, code int) *response {
 
 type Context interface {
 	Peer() Caller
-	SessionID() []byte
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
+}
+
+type AuthenticatedContext interface {
+	Context
+	SessionID() []byte
 	RemotePublicKey() *ed25519.PublicKey
 }
 
@@ -242,30 +246,36 @@ var ErrCanceled = errors.New("canceled")
 
 type rpcCtx struct {
 	types.EncodedConn
-	secureconn.AuthenticatedConn
 	rpc *RPC
 }
 
 func (c *rpcCtx) Peer() Caller { return c.rpc }
 
-var _ Context = (*rpcCtx)(nil)
+type rpcAuthCtx struct {
+	*rpcCtx
+	secureconn.AuthenticatedConn
+}
 
-type dummyAuth struct{}
-
-func (dummyAuth) SessionID() []byte                   { return nil }
-func (dummyAuth) RemotePublicKey() *ed25519.PublicKey { return nil }
+var (
+	_ Context              = (*rpcCtx)(nil)
+	_ AuthenticatedContext = (*rpcAuthCtx)(nil)
+)
 
 func mkCallCtx(ctx context.Context, conn types.EncodedConn, rpc *RPC) context.Context {
-	c := rpcCtx{
+	c := &rpcCtx{
 		EncodedConn: conn,
 		rpc:         rpc,
 	}
+	var val any
 	if auth, ok := conn.(secureconn.AuthenticatedConn); ok {
-		c.AuthenticatedConn = auth
+		val = &rpcAuthCtx{
+			rpcCtx:            c,
+			AuthenticatedConn: auth,
+		}
 	} else {
-		c.AuthenticatedConn = dummyAuth{}
+		val = c
 	}
-	return context.WithValue(ctx, rpcCtxKey{}, &c)
+	return context.WithValue(ctx, rpcCtxKey{}, val)
 }
 
 func New(conn types.EncodedConn, h *Handler) *RPC {
