@@ -361,6 +361,28 @@ type CommonAttrs interface {
 
 type Key map[int64]any
 
+func (k *Key) UnmarshalCBOR(data []byte) error {
+	opt := cbor.DecOptions{
+		IntDec: cbor.IntDecConvertSigned,
+	}
+	mode, err := opt.DecMode()
+	if err != nil {
+		panic(err)
+	}
+	out := (*map[int64]any)(k)
+	return mode.Unmarshal(data, out)
+}
+
+func (k Key) MarshalCBOR() ([]byte, error) {
+	opt := cbor.CanonicalEncOptions()
+	mode, err := opt.EncMode()
+	if err != nil {
+		panic(err)
+	}
+	data := map[int64]any(k)
+	return mode.Marshal(data)
+}
+
 func GetAttr[T ~int64](k Key, attr int64) T {
 	switch v := k[attr].(type) {
 	case int64:
@@ -411,18 +433,6 @@ func (k Key) Encode() []byte {
 		panic(err)
 	}
 	return out
-}
-
-func DecodeKey(data []byte) (key Key, err error) {
-	do := cbor.DecOptions{
-		IntDec: cbor.IntDecConvertSigned,
-	}
-	dm, err := do.DecMode()
-	if err != nil {
-		panic(err)
-	}
-	err = dm.Unmarshal(data, &key)
-	return
 }
 
 type Curve int64

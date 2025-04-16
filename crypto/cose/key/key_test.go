@@ -86,3 +86,13 @@ func TestImpl(t *testing.T) {
 		})
 	}
 }
+
+func TestConsistency(t *testing.T) {
+	priv, err := ed25519.GeneratePrivateKey()
+	require.NoError(t, err)
+	data := priv.COSE().Encode()
+
+	for range 100 {
+		require.Equal(t, data, priv.COSE().Encode())
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/bls/minpk"
 	"github.com/signatory-io/signatory-core/crypto/bls/minsig"
@@ -17,8 +18,8 @@ var errInvalidPublicKey = errors.New("invalid public key format")
 var errInvalidPrivateKey = errors.New("invalid private key format")
 
 func ParsePublicKey(data []byte) (crypto.PublicKey, error) {
-	key, err := cose.DecodeKey(data)
-	if err != nil {
+	var key cose.Key
+	if err := cbor.Unmarshal(data, &key); err != nil {
 		return nil, err
 	}
 	return NewPublicKey(key)
@@ -94,8 +95,8 @@ func NewPublicKey(key cose.Key) (crypto.PublicKey, error) {
 }
 
 func ParsePrivateKey(data []byte) (crypto.PrivateKey, error) {
-	key, err := cose.DecodeKey(data)
-	if err != nil {
+	var key cose.Key
+	if err := cbor.Unmarshal(data, &key); err != nil {
 		return nil, err
 	}
 	return NewPrivateKey(key)
