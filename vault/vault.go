@@ -52,8 +52,9 @@ type OptType uint
 
 const (
 	OptInt OptType = iota
-	OptString
+	OptUint
 	OptBool
+	OptString
 )
 
 type OptDesc struct {

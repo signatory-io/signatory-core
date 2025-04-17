@@ -283,7 +283,7 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 	}
 
 	name := filepath.Join(l.storeDir, hex.EncodeToString(pkh[:]))
-	if err := utils.WriteKeyFile(name, data, 0700); err != nil {
+	if err := utils.WriteKeyFile(name, data, 0600); err != nil {
 		return nil, vault.WrapError(l, err)
 	}
 
