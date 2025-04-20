@@ -7,8 +7,9 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/cose"
 	"github.com/signatory-io/signatory-core/rpc"
-	"github.com/signatory-io/signatory-core/rpc/secretmanager"
+	uirpc "github.com/signatory-io/signatory-core/rpc/ui"
 	"github.com/signatory-io/signatory-core/signatory"
+	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 )
 
@@ -23,27 +24,31 @@ type Service struct {
 
 func (s *Service) RegisterSelf(h *rpc.Handler) {
 	h.RegisterObject("sig", rpc.MethodTable{
-		"listKeys":              rpc.NewMethod(s.listKeys),
-		"listVaults":            rpc.NewMethod(s.listVaults),
-		"generateKey":           rpc.NewMethod(s.generateKey),
-		"getGenerateKeyOptions": rpc.NewMethod(s.getGenerateKeyOptions),
+		"listKeys":    rpc.NewMethod(s.listKeys),
+		"listVaults":  rpc.NewMethod(s.listVaults),
+		"unlockKey":   rpc.NewMethod(s.unlockKey),
+		"generateKey": rpc.NewMethod(s.generateKey),
 	})
 }
 
 func (s *Service) listKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
 	it := s.Signatory.ListKeys(ctx, vaultID, filter)
-	for k := range it.Keys() {
-		pub := k.PublicKey()
-		key := KeyInfo{
+	for key := range it.Keys() {
+		pub := key.PublicKey()
+		keyInfo := KeyInfo{
 			PublicKeyHash: crypto.NewPublicKeyHash(pub),
+			Algorithm:     pub.PublicKeyType(),
 			PublicKey:     pub.COSE(),
 			Vault: VaultInfo{
-				ID:           k.VaultID(),
-				Name:         k.Vault().Name(),
-				InstanceInfo: k.Vault().InstanceInfo(),
+				ID:           key.VaultID(),
+				Name:         key.Vault().Name(),
+				InstanceInfo: key.Vault().InstanceInfo(),
 			},
 		}
-		keys = append(keys, &key)
+		if u, ok := key.(vault.Unlocker); ok {
+			keyInfo.Locked = u.IsLocked()
+		}
+		keys = append(keys, &keyInfo)
 	}
 	if err = it.Err(); err != nil {
 		return nil, err
@@ -62,10 +67,12 @@ func (s *Service) listVaults() (infos []VaultInfo, err error) {
 	return
 }
 
-func (s *Service) generateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.Options) (*KeyInfo, error) {
+func (s *Service) generateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
 	c := rpc.GetContext(ctx)
-	secretManager := secretmanager.Proxy{
-		RPC: c.Peer(),
+	secretManager := ui.InteractiveSecretManager{
+		UI: uirpc.Proxy{
+			RPC: c.Peer(),
+		},
 	}
 	vi, err := s.Signatory.GetVault(vaultID)
 	if err != nil {
@@ -82,6 +89,7 @@ func (s *Service) generateKey(ctx context.Context, vaultID string, alg crypto.Al
 	pub := key.PublicKey()
 	keyInfo := KeyInfo{
 		PublicKeyHash: crypto.NewPublicKeyHash(pub),
+		Algorithm:     pub.PublicKeyType(),
 		PublicKey:     pub.COSE(),
 		Vault: VaultInfo{
 			ID:           vi.ID(),
@@ -89,25 +97,36 @@ func (s *Service) generateKey(ctx context.Context, vaultID string, alg crypto.Al
 			InstanceInfo: vi.Vault().InstanceInfo(),
 		},
 	}
+	if u, ok := key.(vault.Unlocker); ok {
+		keyInfo.Locked = u.IsLocked()
+	}
 	return &keyInfo, nil
 }
 
-func (s *Service) getGenerateKeyOptions(vaultID string) (map[string]vault.OptDesc, error) {
-	vi, err := s.Signatory.GetVault(vaultID)
+func (s *Service) unlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
+	c := rpc.GetContext(ctx)
+	secretManager := ui.InteractiveSecretManager{
+		UI: uirpc.Proxy{
+			RPC: c.Peer(),
+		},
+	}
+	key, err := s.Signatory.GetKey(ctx, pkh)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	gen, ok := vi.Vault().(vault.Generator)
-	if !ok {
-		return nil, rpc.WrapError(errors.New("key generation is not supported"), signatory.FeatureNotSupported)
+	unlocker, ok := key.(vault.Unlocker)
+	if !ok || !unlocker.IsLocked() {
+		return nil
 	}
-	return gen.GenerateOptions(), nil
+	return unlocker.Unlock(ctx, secretManager)
 }
 
 type KeyInfo struct {
-	PublicKeyHash crypto.PublicKeyHash `cbor:"0,keyasint"`
-	PublicKey     cose.Key             `cbor:"1,keyasint"`
-	Vault         VaultInfo            `cbor:"2,keyasint"`
+	PublicKeyHash *crypto.PublicKeyHash `cbor:"0,keyasint"`
+	Algorithm     crypto.Algorithm      `cbor:"1,keyasint"`
+	PublicKey     cose.Key              `cbor:"2,keyasint"`
+	Locked        bool                  `cbor:"3,keyasint"`
+	Vault         VaultInfo             `cbor:"4,keyasint"`
 }
 
 type VaultInfo struct {

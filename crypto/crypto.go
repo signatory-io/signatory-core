@@ -2,12 +2,13 @@ package crypto
 
 import (
 	"encoding/hex"
+	"strings"
 
 	"github.com/signatory-io/signatory-core/crypto/cose"
 	"golang.org/x/crypto/blake2b"
 )
 
-type Algorithm uint64
+type Algorithm uint
 
 const (
 	Ed25519 Algorithm = 1 + iota
@@ -21,7 +22,66 @@ const (
 	ECDSA_BrainpoolP512r1
 	BLS12_381_MinPK
 	BLS12_381_MinSig
+	NumAlgorithms = iota
 )
+
+func (a Algorithm) Short() string {
+	switch a {
+	case Ed25519:
+		return "ed25519"
+	case ECDSA_P256:
+		return "ecp256"
+	case ECDSA_P384:
+		return "ecp384"
+	case ECDSA_P521:
+		return "ecp521"
+	case ECDSA_Secp256k1:
+		return "eck256"
+	case ECDSA_BrainpoolP256r1:
+		return "ecbp256"
+	case ECDSA_BrainpoolP320r1:
+		return "ecbp320"
+	case ECDSA_BrainpoolP384r1:
+		return "ecbp384"
+	case ECDSA_BrainpoolP512r1:
+		return "ecbp512"
+	case BLS12_381_MinPK:
+		return "blsmp"
+	case BLS12_381_MinSig:
+		return "blsms"
+	default:
+		return ""
+	}
+}
+
+func AlgorithmFromString(s string) Algorithm {
+	switch {
+	case strings.EqualFold(s, "ed25519"):
+		return Ed25519
+	case strings.EqualFold(s, "ecp256"):
+		return ECDSA_P256
+	case strings.EqualFold(s, "ecp384"):
+		return ECDSA_P384
+	case strings.EqualFold(s, "ecp521"):
+		return ECDSA_P521
+	case strings.EqualFold(s, "eck256"):
+		return ECDSA_Secp256k1
+	case strings.EqualFold(s, "ecbp256"):
+		return ECDSA_BrainpoolP256r1
+	case strings.EqualFold(s, "ecbp320"):
+		return ECDSA_BrainpoolP320r1
+	case strings.EqualFold(s, "ecbp384"):
+		return ECDSA_BrainpoolP384r1
+	case strings.EqualFold(s, "ecbp512"):
+		return ECDSA_BrainpoolP512r1
+	case strings.EqualFold(s, "blsmp"):
+		return BLS12_381_MinPK
+	case strings.EqualFold(s, "blsms"):
+		return BLS12_381_MinSig
+	default:
+		return 0
+	}
+}
 
 func (a Algorithm) String() string {
 	switch a {
@@ -38,7 +98,7 @@ func (a Algorithm) String() string {
 	case ECDSA_BrainpoolP256r1:
 		return "ECDSA BrainpoolP256r1"
 	case ECDSA_BrainpoolP320r1:
-		return "ECDSA_BrainpoolP320r1"
+		return "ECDSA BrainpoolP320r1"
 	case ECDSA_BrainpoolP384r1:
 		return "ECDSA BrainpoolP384r1"
 	case ECDSA_BrainpoolP512r1:
@@ -58,8 +118,9 @@ func (h *PublicKeyHash) String() string {
 	return hex.EncodeToString(h[:])
 }
 
-func NewPublicKeyHash(pub PublicKey) PublicKeyHash {
-	return PublicKeyHash(blake2b.Sum256(pub.COSE().Encode()))
+func NewPublicKeyHash(pub PublicKey) *PublicKeyHash {
+	sum := blake2b.Sum256(pub.COSE().Encode())
+	return (*PublicKeyHash)(&sum)
 }
 
 type PublicKey interface {

@@ -19,12 +19,12 @@ func NewConfigCommand(conf *RootContextConfig) *cobra.Command {
 		Aliases: []string{"conf"},
 		Short:   "signatory-cli configuration commands",
 	}
-	cmd.AddCommand(NewConfigInitCommand(conf))
-	cmd.AddCommand(NewIDCommand(conf))
+	cmd.AddCommand(newConfigInitCommand(conf))
+	cmd.AddCommand(newIDCommand(conf))
 	return &cmd
 }
 
-func NewConfigInitCommand(conf *RootContextConfig) *cobra.Command {
+func newConfigInitCommand(conf *RootContextConfig) *cobra.Command {
 	cmd := cobra.Command{
 		Use:   "init",
 		Short: "Create new configuration file with provided parameters",
@@ -52,7 +52,7 @@ func NewConfigInitCommand(conf *RootContextConfig) *cobra.Command {
 	return &cmd
 }
 
-func NewIDCommand(conf *RootContextConfig) *cobra.Command {
+func newIDCommand(conf *RootContextConfig) *cobra.Command {
 	cmd := cobra.Command{
 		Use:     "identity",
 		Aliases: []string{"id"},

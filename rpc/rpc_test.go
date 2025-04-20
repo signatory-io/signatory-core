@@ -60,7 +60,7 @@ func TestRPC(t *testing.T) {
 	require.NoError(t, err)
 
 	h := Handler{
-		Objects: map[string]MethodTable{
+		objects: map[string]MethodTable{
 			"obj": {
 				"add": NewMethod(func(x, y int) (int, error) { return x + y, nil }),
 				"with_ctx": NewMethod(func(ctx context.Context, x, y int) (int, *ed25519.PublicKey, error) {

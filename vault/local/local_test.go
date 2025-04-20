@@ -15,7 +15,7 @@ type dummySM struct {
 	secret []byte
 }
 
-func (d *dummySM) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm) ([]byte, error) {
+func (d *dummySM) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm, hint vault.GetSecretHint) ([]byte, error) {
 	d.cnt++
 	return d.secret, nil
 }
@@ -50,7 +50,7 @@ func TestEncrypted(t *testing.T) {
 	sm := dummySM{
 		secret: []byte("passwd"),
 	}
-	key, err := v.Generate(context.Background(), crypto.Ed25519, &sm, vault.Options{"encrypt": true})
+	key, err := v.Generate(context.Background(), crypto.Ed25519, &sm, vault.EncryptKey(true))
 	require.NoError(t, err)
 
 	n := 0

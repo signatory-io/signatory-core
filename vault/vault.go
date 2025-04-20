@@ -35,8 +35,16 @@ type Unlocker interface {
 	Unlock(ctx context.Context, sm SecretManager) error
 }
 
+type GetSecretHint uint
+
+const (
+	GetSecretHintGenerate GetSecretHint = 1 + iota
+	GetSecretHintUnlock
+	GetSecretHintSign
+)
+
 type SecretManager interface {
-	GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm) ([]byte, error)
+	GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm, hint GetSecretHint) ([]byte, error)
 }
 
 type Vault interface {
@@ -48,26 +56,17 @@ type Vault interface {
 	InstanceInfo() string
 }
 
-type OptType uint
-
-const (
-	OptInt OptType = iota
-	OptUint
-	OptBool
-	OptString
-)
-
-type OptDesc struct {
-	Type OptType `cbor:"0,keyasint"`
-	Desc string  `cbor:"1,keyasint"`
+type GenerateOptions interface {
+	Encrypt() bool
 }
 
-type Options map[string]any
+type EncryptKey bool
+
+func (e EncryptKey) Encrypt() bool { return bool(e) }
 
 // Generator represents a backend which is able to generate keys on its side
 type Generator interface {
-	GenerateOptions() map[string]OptDesc
-	Generate(ctx context.Context, alg crypto.Algorithm, sm SecretManager, options Options) (KeyReference, error)
+	Generate(ctx context.Context, alg crypto.Algorithm, sm SecretManager, options GenerateOptions) (KeyReference, error)
 }
 
 type KeyIterator interface {

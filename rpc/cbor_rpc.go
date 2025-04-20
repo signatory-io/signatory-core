@@ -128,7 +128,7 @@ func (m *Method) call(ctx context.Context, args []cbor.RawMessage) (*response, e
 	t := m.fn.Type()
 	idx := 0
 	ins := make([]reflect.Value, t.NumIn())
-	if t.In(idx) == ctxType {
+	if t.NumIn() != 0 && t.In(idx) == ctxType {
 		ins[idx] = reflect.ValueOf(ctx)
 		idx += 1
 	}
@@ -199,14 +199,16 @@ func NewMethod(f any) *Method {
 type MethodTable map[string]*Method
 
 type Handler struct {
-	Objects map[string]MethodTable
+	objects map[string]MethodTable
 }
 
+func NewHandler() *Handler { return &Handler{objects: map[string]MethodTable{}} }
+
 func (h *Handler) RegisterObject(path string, methods MethodTable) {
-	if _, ok := h.Objects[path]; ok {
+	if _, ok := h.objects[path]; ok {
 		panic(fmt.Sprintf("rpc: path %s is already in use", path))
 	}
-	h.Objects[path] = methods
+	h.objects[path] = methods
 }
 
 func (h *Handler) Register(obj RPCObject) { obj.RegisterSelf(h) }
@@ -217,7 +219,7 @@ type RPCObject interface {
 
 func (h *Handler) handleCall(ctx context.Context, req *request) (*response, error) {
 	p := strings.Join(req.Path, "/")
-	table, ok := h.Objects[p]
+	table, ok := h.objects[p]
 	if !ok {
 		return mkErrorResponse(fmt.Errorf("object path `%s' is not found", p), CodeObjectNotFound), nil
 	}

@@ -22,7 +22,13 @@ func NewRootCommand() *cobra.Command {
 	conf.Flags.BoolVarP(&conf.Secure, "secure-connection", "s", false, "Use encrypted and authenticated secure connection")
 	conf.Flags.StringVar(&conf.Identity, "identity-file", "", "Secure connection identity key file")
 
+	cmd.MarkFlagFilename("config-file")
+	cmd.MarkFlagFilename("identity-file")
+	cmd.MarkFlagDirname("base-dir")
+
 	cmd.AddCommand(NewConfigCommand(&conf))
+	cmd.AddCommand(NewVaultCommand(&conf))
+	cmd.AddCommand(NewKeyCommand(&conf))
 
 	return &cmd
 }

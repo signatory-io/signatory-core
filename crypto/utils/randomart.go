@@ -83,7 +83,7 @@ func FingerprintRandomArt(head string, digest []byte) []byte {
 		}
 	} else {
 		out.WriteRune('+')
-		for range sizeX - 2 {
+		for range sizeX {
 			out.WriteRune('-')
 		}
 		out.WriteRune('+')

@@ -107,10 +107,17 @@ func ReadKeyFile(name string) (*KeyFile, error) {
 	return &out, cbor.Unmarshal(data, &out)
 }
 
-func WriteKeyFile(name string, data *KeyFile, perm os.FileMode) error {
+func WriteKeyFile(name, tmpSuffix string, data *KeyFile, perm os.FileMode) error {
 	buf, err := cbor.Marshal(data)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(name, buf, perm)
+	if tmpSuffix == "" {
+		tmpSuffix = "_tmp"
+	}
+	tmpName := name + tmpSuffix
+	if err = os.WriteFile(tmpName, buf, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, name)
 }

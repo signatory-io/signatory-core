@@ -66,7 +66,6 @@ func (t *Terminal) Dialog(ctx context.Context, dialog *Dialog) error {
 		io.Writer
 	}{stdin, os.Stdout}, "")
 
-	fmt.Fprintln(tr, "")
 	if dialog.Title != "" {
 		fmt.Fprintf(tr, "# %s\n", dialog.Title)
 	}

@@ -7,6 +7,7 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/signatory-io/signatory-core/crypto"
@@ -53,7 +54,7 @@ func (l *localKey) getSigner(ctx context.Context, sm vault.SecretManager) (crypt
 	}
 
 	pkh := crypto.NewPublicKeyHash(l.pub)
-	pwd, err := sm.GetSecret(ctx, &pkh, l.pub.PublicKeyType())
+	pwd, err := sm.GetSecret(ctx, pkh, l.pub.PublicKeyType(), vault.GetSecretHintSign)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func (l *localKey) Unlock(ctx context.Context, uc vault.SecretManager) error {
 	l.v.mtx.RUnlock()
 
 	pkh := crypto.NewPublicKeyHash(l.pub)
-	pwd, err := uc.GetSecret(ctx, &pkh, l.pub.PublicKeyType())
+	pwd, err := uc.GetSecret(ctx, pkh, l.pub.PublicKeyType(), vault.GetSecretHintUnlock)
 	if err != nil {
 		return vault.WrapError(l.v, err)
 	}
@@ -129,7 +130,7 @@ func (l *localKey) Unlock(ctx context.Context, uc vault.SecretManager) error {
 	l.v.mtx.Lock()
 	defer l.v.mtx.Unlock()
 	l.decrypted = dec
-	l.v.decryptedKeys[pkh] = dec
+	l.v.decryptedKeys[*pkh] = dec
 	return nil
 }
 
@@ -163,7 +164,7 @@ func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 	}
 	return func(yield func(vault.KeyReference) bool) {
 		for _, entry := range it.entries {
-			if !entry.Type().IsRegular() {
+			if !entry.Type().IsRegular() || strings.HasSuffix(entry.Name(), "_tmp") {
 				continue
 			}
 
@@ -205,7 +206,7 @@ func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 			} else {
 				pkh := crypto.NewPublicKeyHash(pub)
 				it.v.mtx.RLock()
-				key.decrypted = it.v.decryptedKeys[pkh]
+				key.decrypted = it.v.decryptedKeys[*pkh]
 				it.v.mtx.RUnlock()
 			}
 
@@ -238,19 +239,10 @@ func (l *LocalVault) List(ctx context.Context, filter []crypto.Algorithm) vault.
 
 func (l *LocalVault) Close(ctx context.Context) error         { return nil }
 func (l *LocalVault) Ready(ctx context.Context) (bool, error) { return true, nil }
-func (l *LocalVault) InstanceInfo() string                    { return fmt.Sprintf("local/%s", l.storeDir) }
+func (l *LocalVault) InstanceInfo() string                    { return fmt.Sprintf("Local/%s", l.storeDir) }
 func (l *LocalVault) Name() string                            { return "local" }
 
-func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vault.SecretManager, options vault.Options) (vault.KeyReference, error) {
-	encrypt := false
-	if v, ok := options["encrypt"]; ok {
-		if b, ok := v.(bool); ok {
-			encrypt = b
-		} else {
-			return nil, vault.WrapError(l, fmt.Errorf("invalid value type %T", v))
-		}
-	}
-
+func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vault.SecretManager, options vault.GenerateOptions) (vault.KeyReference, error) {
 	priv, err := keygen.GeneratePrivateKey(alg)
 	if err != nil {
 		return nil, vault.WrapError(l, err)
@@ -262,9 +254,10 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 
 	pub := signer.Public()
 	pkh := crypto.NewPublicKeyHash(pub)
+	encrypt := options != nil && options.Encrypt()
 	var secret []byte
 	if encrypt {
-		if secret, err = sm.GetSecret(ctx, &pkh, alg); err != nil {
+		if secret, err = sm.GetSecret(ctx, pkh, alg, vault.GetSecretHintGenerate); err != nil {
 			return nil, vault.WrapError(l, err)
 		}
 	}
@@ -283,21 +276,12 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 	}
 
 	name := filepath.Join(l.storeDir, hex.EncodeToString(pkh[:]))
-	if err := utils.WriteKeyFile(name, data, 0600); err != nil {
+	if err := utils.WriteKeyFile(name, "_tmp", data, 0600); err != nil {
 		return nil, vault.WrapError(l, err)
 	}
 
 	return &key, nil
 }
-
-var genOpts = map[string]vault.OptDesc{
-	"encrypt": {
-		Type: vault.OptBool,
-		Desc: "Encrypt key with password",
-	},
-}
-
-func (l *LocalVault) GenerateOptions() map[string]vault.OptDesc { return genOpts }
 
 var (
 	_ vault.Unlocker  = (*localKey)(nil)

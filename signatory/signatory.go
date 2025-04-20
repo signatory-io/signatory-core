@@ -88,6 +88,18 @@ type keyRef struct {
 
 func (k keyRef) VaultID() string { return k.instanceID }
 
+func (k keyRef) IsLocked() bool {
+	u, ok := k.KeyReference.(vault.Unlocker)
+	return ok && u.IsLocked()
+}
+
+func (k keyRef) Unlock(ctx context.Context, sm vault.SecretManager) error {
+	if u, ok := k.KeyReference.(vault.Unlocker); ok {
+		return u.Unlock(ctx, sm)
+	}
+	return nil
+}
+
 func (s *Signatory) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) KeyIterator {
 	var vaults iter.Seq[*vaultInst]
 	if vaultID != "" {
@@ -111,12 +123,31 @@ func (s *Signatory) updateCache(key keyRef) {
 	pkh := crypto.NewPublicKeyHash(key.PublicKey())
 	s.cacheMtx.Lock()
 	defer s.cacheMtx.Unlock()
-	s.cache[pkh] = key
+	s.cache[*pkh] = key
 }
 
 type VaultInfo interface {
 	ID() string
 	Vault() vault.Vault
+}
+
+func New(vaults map[string]vault.Vault) *Signatory {
+	s := &Signatory{
+		vaults:     make([]*vaultInst, 0, len(vaults)),
+		vaultIndex: make(map[string]*vaultInst),
+		cache:      make(map[crypto.PublicKeyHash]keyRef),
+	}
+
+	for id, v := range vaults {
+		inst := &vaultInst{
+			id:    id,
+			vault: v,
+		}
+		s.vaults = append(s.vaults, inst)
+		s.vaultIndex[id] = inst
+	}
+
+	return s
 }
 
 func (s *Signatory) ListVaults() iter.Seq[VaultInfo] {
@@ -154,7 +185,7 @@ func (s *Signatory) GetKey(ctx context.Context, pkh *crypto.PublicKeyHash) (KeyR
 			}
 			s.updateCache(ref)
 			h := crypto.NewPublicKeyHash(key.PublicKey())
-			if h == *pkh {
+			if *h == *pkh {
 				return ref, nil
 			}
 		}

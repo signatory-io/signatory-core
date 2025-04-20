@@ -22,9 +22,9 @@ type Proxy struct {
 	RPC rpc.Caller
 }
 
-func (p Proxy) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm) ([]byte, error) {
+func (p Proxy) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg crypto.Algorithm, hint vault.GetSecretHint) ([]byte, error) {
 	var out []byte
-	return out, p.RPC.Call(ctx, &out, "sm", "getSecret", pkh, alg)
+	return out, p.RPC.Call(ctx, &out, "sm", "getSecret", pkh, alg, hint)
 }
 
 var (

@@ -8,7 +8,7 @@ import (
 )
 
 type Server struct {
-	handler  *Handler
+	Handler  *Handler
 	cancel   chan<- struct{}
 	done     <-chan struct{}
 	listener types.EncodedListener
@@ -43,7 +43,7 @@ func (s *Server) Serve(l types.EncodedListener) (err error) {
 		}
 		wg.Add(1)
 		go func() {
-			rpc := New(conn, s.handler)
+			rpc := New(conn, s.Handler)
 			select {
 			case <-rpc.Done():
 			case <-cancel:
