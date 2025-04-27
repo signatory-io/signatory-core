@@ -13,7 +13,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/secureconn"
+	"github.com/signatory-io/signatory-core/rpc/conn/secure"
 	"github.com/signatory-io/signatory-core/rpc/types"
 )
 
@@ -255,7 +255,7 @@ func (c *rpcCtx) Peer() Caller { return c.rpc }
 
 type rpcAuthCtx struct {
 	*rpcCtx
-	secureconn.AuthenticatedConn
+	secure.AuthenticatedConn
 }
 
 var (
@@ -269,7 +269,7 @@ func mkCallCtx(ctx context.Context, conn types.EncodedConn, rpc *RPC) context.Co
 		rpc:         rpc,
 	}
 	var val any
-	if auth, ok := conn.(secureconn.AuthenticatedConn); ok {
+	if auth, ok := conn.(secure.AuthenticatedConn); ok {
 		val = &rpcAuthCtx{
 			rpcCtx:            c,
 			AuthenticatedConn: auth,

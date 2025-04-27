@@ -1,4 +1,4 @@
-package secureconn
+package secure
 
 import (
 	"bytes"
@@ -124,12 +124,12 @@ type Authenticator interface {
 	IsAuthenticatedPeerAllowed(remoteAddr net.Addr, authenticatedRemoteKey *ed25519.PublicKey) bool
 }
 
-func New(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (*SecureConn, error) {
+func NewSecureConn(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (*SecureConn, error) {
 	eph, err := curve().GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	rawConn := conn.New[codec.CBOR](transport)
+	rawConn := conn.NewEncodedStreamConn[codec.CBOR](transport)
 
 	var localPub *ed25519.PublicKey
 	if localKey != nil {

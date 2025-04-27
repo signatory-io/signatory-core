@@ -12,8 +12,9 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/utils"
 	"github.com/signatory-io/signatory-core/rpc"
+	"github.com/signatory-io/signatory-core/rpc/codec"
 	plainconn "github.com/signatory-io/signatory-core/rpc/conn"
-	"github.com/signatory-io/signatory-core/rpc/secureconn"
+	"github.com/signatory-io/signatory-core/rpc/conn/secure"
 	signatoryrpc "github.com/signatory-io/signatory-core/rpc/signatory"
 	rpctypes "github.com/signatory-io/signatory-core/rpc/types"
 	rpcui "github.com/signatory-io/signatory-core/rpc/ui"
@@ -29,11 +30,11 @@ func (r *RootContext) NewRPC() (*rpc.RPC, error) {
 	}
 	var conn rpctypes.EncodedConn
 	if r.Identity != nil {
-		if conn, err = secureconn.New(tcpConn, r.Identity, nil); err != nil {
+		if conn, err = secure.NewSecureConn(tcpConn, r.Identity, nil); err != nil {
 			return nil, err
 		}
 	} else {
-		conn = plainconn.New(tcpConn)
+		conn = plainconn.NewEncodedStreamConn[codec.CBOR](tcpConn)
 	}
 
 	var termUI ui.Terminal

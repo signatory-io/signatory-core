@@ -8,7 +8,7 @@ import (
 
 	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/secureconn"
+	"github.com/signatory-io/signatory-core/rpc/conn/secure"
 	"github.com/signatory-io/signatory-core/utils"
 	"gopkg.in/yaml.v3"
 )
@@ -68,4 +68,4 @@ func (k KeysFile) IsConnectionAllowed(remoteAddr net.Addr, unauthenticatedRemote
 	return true
 }
 
-var _ secureconn.Authenticator = KeysFile("")
+var _ secure.Authenticator = KeysFile("")
