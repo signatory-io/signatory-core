@@ -15,6 +15,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/rpc/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn"
 	"github.com/signatory-io/signatory-core/rpc/types"
 	"golang.org/x/crypto/blake2b"
@@ -128,7 +129,7 @@ func New(transport net.Conn, localKey *ed25519.PrivateKey, auth Authenticator) (
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	rawConn := conn.New(transport)
+	rawConn := conn.New[codec.CBOR](transport)
 
 	var localPub *ed25519.PublicKey
 	if localKey != nil {
