@@ -1,7 +1,6 @@
 package secure
 
 import (
-	"bytes"
 	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/rand"
@@ -13,11 +12,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn"
-	"github.com/signatory-io/signatory-core/rpc/types"
+	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -305,29 +302,12 @@ func (p *packetCipher) writePacket(w io.Writer, data []byte) error {
 type SecureConn struct {
 	conn                    net.Conn
 	readCipher, writeCipher packetCipher
-	encBuffer               bytes.Buffer
 	remotePub               *ed25519.PublicKey
 	sessionID               []byte
 }
 
-func (c *SecureConn) readPacket() ([]byte, error)   { return c.readCipher.readPacket(c.conn) }
-func (c *SecureConn) writePacket(data []byte) error { return c.writeCipher.writePacket(c.conn, data) }
-
-func (c *SecureConn) ReadMessage(v any) error {
-	packet, err := c.readPacket()
-	if err != nil {
-		return err
-	}
-	return cbor.Unmarshal(packet, v)
-}
-
-func (c *SecureConn) WriteMessage(v any) error {
-	c.encBuffer.Reset()
-	if err := cbor.MarshalToBuffer(v, &c.encBuffer); err != nil {
-		return err
-	}
-	return c.writePacket(c.encBuffer.Bytes())
-}
+func (c *SecureConn) ReadPacket() ([]byte, error)   { return c.readCipher.readPacket(c.conn) }
+func (c *SecureConn) WritePacket(data []byte) error { return c.writeCipher.writePacket(c.conn, data) }
 
 type AuthenticatedConn interface {
 	SessionID() []byte
@@ -342,6 +322,5 @@ func (c *SecureConn) LocalAddr() net.Addr                 { return c.conn.LocalA
 func (c *SecureConn) RemoteAddr() net.Addr                { return c.conn.RemoteAddr() }
 
 var (
-	_ types.EncodedConn = (*SecureConn)(nil)
 	_ AuthenticatedConn = (*SecureConn)(nil)
 )

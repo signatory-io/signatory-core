@@ -1,8 +1,10 @@
-package types
+package conn
 
 import (
 	"net"
 	"time"
+
+	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 )
 
 type Conn interface {
@@ -12,10 +14,11 @@ type Conn interface {
 	Close() error
 }
 
-type EncodedConn interface {
+type EncodedConn[C codec.Codec] interface {
 	Conn
 	ReadMessage(v any) error
 	WriteMessage(v any) error
+	Codec() C
 }
 
 type Listener[T Conn] interface {

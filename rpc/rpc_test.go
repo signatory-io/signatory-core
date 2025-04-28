@@ -39,7 +39,7 @@ func TestMethodCallErr(t *testing.T) {
 	res, err := m1.call(context.Background(), []cbor.RawMessage{v})
 	require.NoError(t, err)
 
-	require.Equal(t, &response{Error: &errorResponse{Message: "error", Code: CodeInternalError}}, res)
+	require.Equal(t, &CBORResponse{Error: &CBORErrorResponse{Message: "error", Code: CodeInternalError}}, res)
 }
 
 func TestRPC(t *testing.T) {

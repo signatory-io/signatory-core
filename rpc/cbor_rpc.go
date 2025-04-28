@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/rpc/conn"
+	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn/secure"
-	"github.com/signatory-io/signatory-core/rpc/types"
 )
 
 type Error interface {
@@ -41,54 +41,19 @@ const (
 	CodeObjectNotFound = -32800
 )
 
-type message struct {
-	ID       uint64    `cbor:"0,keyasint"`
-	Request  *request  `cbor:"1,keyasint,omitempty"`
-	Response *response `cbor:"2,keyasint,omitempty"`
-}
-
-type request struct {
-	Path       []string          `cbor:"0,keyasint,omitempty"`
-	Method     string            `cbor:"1,keyasint"`
-	Parameters []cbor.RawMessage `cbor:"2,keyasint,omitempty"`
-}
-
-type response struct {
-	Result cbor.RawMessage `cbor:"0,keyasint,omitempty"`
-	Error  *errorResponse  `cbor:"1,keyasint,omitempty"`
-}
-
-type errorResponse struct {
-	Code    int             `cbor:"0,keyasint,omitempty"`
-	Message string          `cbor:"1,keyasint,omitempty"`
-	Content cbor.RawMessage `cbor:"2,keyasint,omitempty"`
-}
-
-func (e *errorResponse) Error() string  { return e.Message }
-func (e *errorResponse) ErrorCode() int { return e.Code }
-
-func (e *errorResponse) ErrorContent(v any) (ok bool, err error) {
-	if e.Content == nil {
-		return false, nil
-	}
-	if err = cbor.Unmarshal(e.Content, v); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 type Method struct {
 	fn reflect.Value
 }
 
-func mkErrorResponse(err error, code int) *response {
-	ret := &errorResponse{
+func mkErrorResponse[C codec.Codec](err error, code int) *Response[C] {
+	ret := &ErrorResponse[C]{
 		Message: err.Error(),
 	}
+	var cod C
 	if err, ok := err.(Error); ok {
 		ret.Code = err.ErrorCode()
 		if err, ok := err.(errorEx); ok {
-			if content, err := cbor.Marshal(err.ErrorContent()); err == nil {
+			if content, err := cod.Marshal(err.ErrorContent()); err == nil {
 				ret.Content = content
 			}
 		}
@@ -98,7 +63,7 @@ func mkErrorResponse(err error, code int) *response {
 	if ret.Code == 0 {
 		ret.Code = CodeInternalError
 	}
-	return &response{Error: ret}
+	return &Response[C]{Error: ret}
 }
 
 type Context interface {
@@ -124,7 +89,7 @@ func GetContext(ctx context.Context) Context {
 }
 
 // error is returned only in case of the context cancellation
-func (m *Method) call(ctx context.Context, args []cbor.RawMessage) (*response, error) {
+func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*Response[C], error) {
 	t := m.fn.Type()
 	idx := 0
 	ins := make([]reflect.Value, t.NumIn())
@@ -133,12 +98,13 @@ func (m *Method) call(ctx context.Context, args []cbor.RawMessage) (*response, e
 		idx += 1
 	}
 	if t.NumIn()-idx != len(args) {
-		return mkErrorResponse(errors.New("invalid number of arguments"), CodeInvalidParams), nil
+		return mkErrorResponse[C](errors.New("invalid number of arguments"), CodeInvalidParams), nil
 	}
+	var cod C
 	for i, arg := range args {
 		ptr := reflect.New(t.In(i + idx))
-		if err := cbor.Unmarshal(arg, ptr.Interface()); err != nil {
-			return mkErrorResponse(err, CodeParseError), nil
+		if err := cod.Unmarshal(arg, ptr.Interface()); err != nil {
+			return mkErrorResponse[C](err, CodeParseError), nil
 		}
 		ins[i+idx] = ptr.Elem()
 	}
@@ -150,9 +116,9 @@ func (m *Method) call(ctx context.Context, args []cbor.RawMessage) (*response, e
 		if cause := context.Cause(ctx); errors.Is(err, ErrCanceled) || errors.Is(err, context.Canceled) && cause == ErrCanceled {
 			return nil, cause
 		}
-		return mkErrorResponse(err, 0), nil
+		return mkErrorResponse[C](err, 0), nil
 	}
-	var result cbor.RawMessage
+	var result []byte
 	if len(outs) > 1 {
 		var r any
 		if len(outs) > 2 {
@@ -165,12 +131,12 @@ func (m *Method) call(ctx context.Context, args []cbor.RawMessage) (*response, e
 			r = outs[0].Interface()
 		}
 		var err error
-		if result, err = cbor.Marshal(r); err != nil {
+		if result, err = cod.Marshal(r); err != nil {
 			// shouldn't happen during normal operation
 			panic(err)
 		}
 	}
-	return &response{Result: result}, nil
+	return &Response[C]{Result: result}, nil
 }
 
 var (
@@ -217,27 +183,27 @@ type RPCObject interface {
 	RegisterSelf(h *Handler)
 }
 
-func (h *Handler) handleCall(ctx context.Context, req *request) (*response, error) {
+func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
 	p := strings.Join(req.Path, "/")
 	table, ok := h.objects[p]
 	if !ok {
-		return mkErrorResponse(fmt.Errorf("object path `%s' is not found", p), CodeObjectNotFound), nil
+		return mkErrorResponse[C](fmt.Errorf("object path `%s' is not found", p), CodeObjectNotFound), nil
 	}
 	m, ok := table[req.Method]
 	if !ok {
-		return mkErrorResponse(fmt.Errorf("method `%s' is not found", req.Method), CodeMethodNotFound), nil
+		return mkErrorResponse[C](fmt.Errorf("method `%s' is not found", req.Method), CodeMethodNotFound), nil
 	}
-	return m.call(ctx, req.Parameters)
+	return callMethod[C](m, ctx, req.Parameters)
 }
 
-type rpcCall struct {
-	req *request
-	res chan<- *response
+type rpcCall[C codec.Codec] struct {
+	req *Request
+	res chan<- *Response[C]
 	err chan<- error
 }
 
-type RPC struct {
-	calls  chan<- rpcCall
+type RPC[C codec.Codec] struct {
+	calls  chan<- rpcCall[C]
 	cancel chan<- struct{}
 	done   <-chan struct{}
 	err    error
@@ -246,31 +212,26 @@ type RPC struct {
 var aLongTimeAgo = time.Unix(1, 0)
 var ErrCanceled = errors.New("canceled")
 
-type rpcCtx struct {
-	types.EncodedConn
-	rpc *RPC
+type rpcCtx[C codec.Codec] struct {
+	conn.EncodedConn[C]
+	rpc *RPC[C]
 }
 
-func (c *rpcCtx) Peer() Caller { return c.rpc }
+func (c *rpcCtx[C]) Peer() Caller { return c.rpc }
 
-type rpcAuthCtx struct {
-	*rpcCtx
+type rpcAuthCtx[C codec.Codec] struct {
+	*rpcCtx[C]
 	secure.AuthenticatedConn
 }
 
-var (
-	_ Context              = (*rpcCtx)(nil)
-	_ AuthenticatedContext = (*rpcAuthCtx)(nil)
-)
-
-func mkCallCtx(ctx context.Context, conn types.EncodedConn, rpc *RPC) context.Context {
-	c := &rpcCtx{
+func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], rpc *RPC[C]) context.Context {
+	c := &rpcCtx[C]{
 		EncodedConn: conn,
 		rpc:         rpc,
 	}
 	var val any
 	if auth, ok := conn.(secure.AuthenticatedConn); ok {
-		val = &rpcAuthCtx{
+		val = &rpcAuthCtx[C]{
 			rpcCtx:            c,
 			AuthenticatedConn: auth,
 		}
@@ -280,17 +241,17 @@ func mkCallCtx(ctx context.Context, conn types.EncodedConn, rpc *RPC) context.Co
 	return context.WithValue(ctx, rpcCtxKey{}, val)
 }
 
-func New(conn types.EncodedConn, h *Handler) *RPC {
-	in := make(chan message)
+func New[E Encodong[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](conn T, h *Handler) *RPC[C] {
+	in := make(chan M)
 	readErrCh := make(chan error)
 
-	out := make(chan message)
+	out := make(chan M)
 	writeErrCh := make(chan error)
 
 	// reader loop
 	go func() {
 		for {
-			var m message
+			var m M
 			if err := conn.ReadMessage(&m); err == nil {
 				in <- m
 			} else {
@@ -319,17 +280,17 @@ func New(conn types.EncodedConn, h *Handler) *RPC {
 		writeErrCh <- err
 	}()
 
-	calls := make(chan rpcCall)
+	calls := make(chan rpcCall[C])
 	dispatcherCancel := make(chan struct{})
 	done := make(chan struct{})
 
-	rpc := &RPC{
+	rpc := &RPC[C]{
 		calls:  calls,
 		cancel: dispatcherCancel,
 		done:   done,
 	}
 
-	awaiting := make(map[uint64]*rpcCall)
+	awaiting := make(map[uint64]*rpcCall[C])
 	msgID := uint64(0)
 
 	// main dispatcher loop
@@ -345,38 +306,34 @@ func New(conn types.EncodedConn, h *Handler) *RPC {
 		for {
 			select {
 			case m := <-in:
-				if m.Request != nil {
+				if req := m.GetRequest(); req != nil {
 					// request to handler
 					if h != nil {
 						handlersWG.Add(1)
 						go func() {
-							id := m.ID
+							id := m.GetID()
 							ctx := mkCallCtx(handlersCtx, conn, rpc)
-							res, err := h.handleCall(ctx, m.Request)
+							res, err := handleCall[C](h, ctx, req)
 							if err == nil {
 								// all errors except ErrCanceled are returned back
-								responseMsg := message{
-									ID:       id,
-									Response: res,
-								}
+								var enc E
+								responseMsg := enc.NewResponse(id, res)
 								out <- responseMsg
 							}
 							handlersWG.Done()
 						}()
 					}
-				} else if m.Response != nil {
+				} else if res := m.GetResponse(); res != nil {
 					// response to our call
-					if c, ok := awaiting[m.ID]; ok {
-						c.res <- m.Response
-						delete(awaiting, m.ID)
+					if c, ok := awaiting[m.GetID()]; ok {
+						c.res <- res
+						delete(awaiting, m.GetID())
 					}
 				}
 			case c := <-calls:
 				awaiting[msgID] = &c
-				callMsg := message{
-					ID:      msgID,
-					Request: c.req,
-				}
+				var enc E
+				callMsg := enc.NewRequest(msgID, c.req)
 				msgID++
 				out <- callMsg
 
@@ -429,25 +386,26 @@ func New(conn types.EncodedConn, h *Handler) *RPC {
 	return rpc
 }
 
-func (r *RPC) Done() <-chan struct{} { return r.done }
-func (r *RPC) Err() error            { return r.err }
+func (r *RPC[C]) Done() <-chan struct{} { return r.done }
+func (r *RPC[C]) Err() error            { return r.err }
 
-func (r *RPC) Call(ctx context.Context, result any, objPath, method string, args ...any) (err error) {
-	params := make([]cbor.RawMessage, len(args))
+func (r *RPC[C]) Call(ctx context.Context, result any, objPath, method string, args ...any) (err error) {
+	params := make([][]byte, len(args))
+	var codec C
 	for i, arg := range args {
-		if params[i], err = cbor.Marshal(arg); err != nil {
+		if params[i], err = codec.Marshal(arg); err != nil {
 			return err
 		}
 	}
-	req := request{
+	req := Request{
 		Path:       strings.Split(objPath, "/"),
 		Method:     method,
 		Parameters: params,
 	}
 
-	resCh := make(chan *response, 1)
+	resCh := make(chan *Response[C], 1)
 	errCh := make(chan error)
-	call := rpcCall{
+	call := rpcCall[C]{
 		req: &req,
 		res: resCh,
 		err: errCh,
@@ -457,7 +415,7 @@ func (r *RPC) Call(ctx context.Context, result any, objPath, method string, args
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	var res *response
+	var res *Response[C]
 	select {
 	case res = <-resCh:
 	case err = <-errCh:
@@ -469,12 +427,12 @@ func (r *RPC) Call(ctx context.Context, result any, objPath, method string, args
 		return res.Error
 	}
 	if res.Result != nil && result != nil {
-		return cbor.Unmarshal(res.Result, result)
+		return codec.Unmarshal(res.Result, result)
 	}
 	return nil
 }
 
-func (r *RPC) Close() error {
+func (r *RPC[C]) Close() error {
 	close(r.cancel)
 	<-r.done
 	return r.err
