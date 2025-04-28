@@ -165,16 +165,16 @@ func NewMethod(f any) *Method {
 type MethodTable map[string]*Method
 
 type Handler struct {
-	objects map[string]MethodTable
+	Objects map[string]MethodTable
 }
 
-func NewHandler() *Handler { return &Handler{objects: map[string]MethodTable{}} }
+func NewHandler() *Handler { return &Handler{Objects: map[string]MethodTable{}} }
 
 func (h *Handler) RegisterObject(path string, methods MethodTable) {
-	if _, ok := h.objects[path]; ok {
+	if _, ok := h.Objects[path]; ok {
 		panic(fmt.Sprintf("rpc: path %s is already in use", path))
 	}
-	h.objects[path] = methods
+	h.Objects[path] = methods
 }
 
 func (h *Handler) Register(obj RPCObject) { obj.RegisterSelf(h) }
@@ -185,7 +185,7 @@ type RPCObject interface {
 
 func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
 	p := strings.Join(req.Path, "/")
-	table, ok := h.objects[p]
+	table, ok := h.Objects[p]
 	if !ok {
 		return mkErrorResponse[C](fmt.Errorf("object path `%s' is not found", p), CodeObjectNotFound), nil
 	}
@@ -230,7 +230,7 @@ func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], rpc
 		rpc:         rpc,
 	}
 	var val any
-	if auth, ok := conn.(secure.AuthenticatedConn); ok {
+	if auth, ok := conn.Inner().(secure.AuthenticatedConn); ok {
 		val = &rpcAuthCtx[C]{
 			rpcCtx:            c,
 			AuthenticatedConn: auth,
@@ -241,7 +241,7 @@ func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], rpc
 	return context.WithValue(ctx, rpcCtxKey{}, val)
 }
 
-func New[E Encodong[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](conn T, h *Handler) *RPC[C] {
+func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](conn T, h *Handler) *RPC[C] {
 	in := make(chan M)
 	readErrCh := make(chan error)
 

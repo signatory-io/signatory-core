@@ -12,9 +12,9 @@ type Message struct {
 	Response *Response `cbor:"2,keyasint,omitempty"`
 }
 
-func (m *Message) GetID() uint64 { return m.ID }
+func (m Message) GetID() uint64 { return m.ID }
 
-func (m *Message) GetRequest() *rpc.Request {
+func (m Message) GetRequest() *rpc.Request {
 	if q := m.Request; q != nil {
 		params := make([][]byte, len(q.Parameters))
 		for i, p := range q.Parameters {
@@ -29,7 +29,7 @@ func (m *Message) GetRequest() *rpc.Request {
 	return nil
 }
 
-func (m *Message) GetResponse() *rpc.Response[codec.CBOR] {
+func (m Message) GetResponse() *rpc.Response[codec.CBOR] {
 	if r := m.Response; r != nil {
 		out := &rpc.Response[codec.CBOR]{
 			Result: []byte(r.Result),
@@ -76,9 +76,9 @@ func (e *ErrorResponse) ErrorContent(v any) (ok bool, err error) {
 	return true, nil
 }
 
-type Encoding struct{}
+type Layout struct{}
 
-func (Encoding) NewRequest(id uint64, r *rpc.Request) Message {
+func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
 	par := make([]cbor.RawMessage, len(r.Parameters))
 	for i, p := range r.Parameters {
 		par[i] = cbor.RawMessage(p)
@@ -93,7 +93,7 @@ func (Encoding) NewRequest(id uint64, r *rpc.Request) Message {
 	}
 }
 
-func (Encoding) NewResponse(id uint64, r *rpc.Response[codec.CBOR]) Message {
+func (Layout) NewResponse(id uint64, r *rpc.Response[codec.CBOR]) Message {
 	res := Response{
 		Result: cbor.RawMessage(r.Result),
 	}
@@ -110,4 +110,4 @@ func (Encoding) NewResponse(id uint64, r *rpc.Response[codec.CBOR]) Message {
 	}
 }
 
-func (Encoding) Codec() codec.CBOR { return codec.CBOR{} }
+func (Layout) Codec() codec.CBOR { return codec.CBOR{} }

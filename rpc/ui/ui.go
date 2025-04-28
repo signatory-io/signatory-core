@@ -79,7 +79,7 @@ func (r Service) dialog(ctx context.Context, dialog *rpcDialog) (results []any, 
 		case item.Confirmation != nil:
 			value := new(bool)
 			d.Items = append(d.Items, &ui.Confirmation{
-				Prompt: item.Input.Prompt,
+				Prompt: item.Confirmation.Prompt,
 				Value:  value,
 			})
 			results = append(results, value)

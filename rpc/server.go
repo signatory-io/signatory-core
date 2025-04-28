@@ -8,14 +8,14 @@ import (
 	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 )
 
-type Server[E Encodong[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C], L conn.Listener[T]] struct {
+type Server[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C], L conn.Listener[T]] struct {
 	Handler  *Handler
 	cancel   chan<- struct{}
 	done     <-chan struct{}
 	listener L
 }
 
-func NewServer[E Encodong[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C], L conn.Listener[T]](h *Handler) *Server[E, C, M, T, L] {
+func NewServer[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C], L conn.Listener[T]](h *Handler) *Server[E, C, M, T, L] {
 	return &Server[E, C, M, T, L]{
 		Handler: h,
 	}

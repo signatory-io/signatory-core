@@ -19,6 +19,11 @@ func (c *EncodedPacketConn[C, T]) SetDeadline(t time.Time) error { return c.conn
 func (c *EncodedPacketConn[C, T]) LocalAddr() net.Addr           { return c.conn.LocalAddr() }
 func (c *EncodedPacketConn[C, T]) RemoteAddr() net.Addr          { return c.conn.RemoteAddr() }
 func (c *EncodedPacketConn[C, T]) Close() error                  { return c.conn.Close() }
+func (c *EncodedPacketConn[C, T]) Inner() Conn                   { return c.conn }
+func (c *EncodedPacketConn[C, T]) Codec() C {
+	var codec C
+	return codec
+}
 
 func (c *EncodedPacketConn[C, T]) ReadMessage(v any) error {
 	packet, err := c.conn.ReadPacket()

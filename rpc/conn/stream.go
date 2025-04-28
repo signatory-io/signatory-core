@@ -16,6 +16,11 @@ func (c *EncodedStreamConn[C]) Close() error                  { return c.conn.Cl
 func (c *EncodedStreamConn[C]) LocalAddr() net.Addr           { return c.conn.LocalAddr() }
 func (c *EncodedStreamConn[C]) RemoteAddr() net.Addr          { return c.conn.RemoteAddr() }
 func (c *EncodedStreamConn[C]) SetDeadline(t time.Time) error { return c.conn.SetDeadline(t) }
+func (c *EncodedStreamConn[C]) Inner() Conn                   { return c.conn }
+func (c *EncodedStreamConn[C]) Codec() C {
+	var codec C
+	return codec
+}
 
 func NewEncodedStreamConn[C codec.Codec](conn net.Conn) *EncodedStreamConn[C] {
 	var codec C

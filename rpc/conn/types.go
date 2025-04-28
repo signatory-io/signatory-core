@@ -19,6 +19,7 @@ type EncodedConn[C codec.Codec] interface {
 	ReadMessage(v any) error
 	WriteMessage(v any) error
 	Codec() C
+	Inner() Conn
 }
 
 type Listener[T Conn] interface {

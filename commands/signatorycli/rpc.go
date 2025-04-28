@@ -12,29 +12,31 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/utils"
 	"github.com/signatory-io/signatory-core/rpc"
-	"github.com/signatory-io/signatory-core/rpc/codec"
-	plainconn "github.com/signatory-io/signatory-core/rpc/conn"
+	"github.com/signatory-io/signatory-core/rpc/cbor"
+	"github.com/signatory-io/signatory-core/rpc/conn"
+	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn/secure"
 	signatoryrpc "github.com/signatory-io/signatory-core/rpc/signatory"
-	rpctypes "github.com/signatory-io/signatory-core/rpc/types"
 	rpcui "github.com/signatory-io/signatory-core/rpc/ui"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 	"github.com/spf13/cobra"
 )
 
-func (r *RootContext) NewRPC() (*rpc.RPC, error) {
+func (r *RootContext) NewRPC() (*cbor.RPC, error) {
 	tcpConn, err := net.Dial("tcp", r.Endpoint)
 	if err != nil {
 		return nil, err
 	}
-	var conn rpctypes.EncodedConn
+	var c conn.EncodedConn[codec.CBOR]
 	if r.Identity != nil {
-		if conn, err = secure.NewSecureConn(tcpConn, r.Identity, nil); err != nil {
+		sc, err := secure.NewSecureConn(tcpConn, r.Identity, nil)
+		if err != nil {
 			return nil, err
 		}
+		c = conn.NewEncodedPacketConn[codec.CBOR](sc)
 	} else {
-		conn = plainconn.NewEncodedStreamConn[codec.CBOR](tcpConn)
+		c = conn.NewEncodedStreamConn[codec.CBOR](tcpConn)
 	}
 
 	var termUI ui.Terminal
@@ -44,7 +46,7 @@ func (r *RootContext) NewRPC() (*rpc.RPC, error) {
 	handler := rpc.NewHandler()
 	handler.Register(uiSvc)
 
-	return rpc.New(conn, handler), nil
+	return cbor.NewRPC(c, handler), nil
 }
 
 func NewVaultCommand(conf *RootContextConfig) *cobra.Command {

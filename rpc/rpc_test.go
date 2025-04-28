@@ -1,46 +1,20 @@
-package rpc
+package rpc_test
 
 import (
 	"context"
-	"errors"
 	"net"
 	"os"
 	"testing"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/rpc"
+	"github.com/signatory-io/signatory-core/rpc/cbor"
+	"github.com/signatory-io/signatory-core/rpc/conn"
+	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn/secure"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
-
-func TestMethodCall(t *testing.T) {
-	f1 := func(_ context.Context, x int) (int, error) {
-		return x, nil
-	}
-	m1 := NewMethod(f1)
-	arg := int(1)
-	v, _ := cbor.Marshal(&arg)
-	res, err := m1.call(context.Background(), []cbor.RawMessage{v})
-	require.NoError(t, err)
-
-	var r int
-	require.NoError(t, cbor.Unmarshal(res.Result, &r))
-	require.Equal(t, arg, r)
-}
-
-func TestMethodCallErr(t *testing.T) {
-	f1 := func(_ context.Context, x int) (int, error) {
-		return 0, errors.New("error")
-	}
-	m1 := NewMethod(f1)
-	arg := int(1)
-	v, _ := cbor.Marshal(&arg)
-	res, err := m1.call(context.Background(), []cbor.RawMessage{v})
-	require.NoError(t, err)
-
-	require.Equal(t, &CBORResponse{Error: &CBORErrorResponse{Message: "error", Code: CodeInternalError}}, res)
-}
 
 func TestRPC(t *testing.T) {
 	k0, err := ed25519.GeneratePrivateKey()
@@ -59,12 +33,12 @@ func TestRPC(t *testing.T) {
 	conn1, err := net.FileConn(os.NewFile(uintptr(fds[1]), "socket"))
 	require.NoError(t, err)
 
-	h := Handler{
-		objects: map[string]MethodTable{
+	h := rpc.Handler{
+		Objects: map[string]rpc.MethodTable{
 			"obj": {
-				"add": NewMethod(func(x, y int) (int, error) { return x + y, nil }),
-				"with_ctx": NewMethod(func(ctx context.Context, x, y int) (int, *ed25519.PublicKey, error) {
-					c := GetContext(ctx).(AuthenticatedContext)
+				"add": rpc.NewMethod(func(x, y int) (int, error) { return x + y, nil }),
+				"with_ctx": rpc.NewMethod(func(ctx context.Context, x, y int) (int, *ed25519.PublicKey, error) {
+					c := rpc.GetContext(ctx).(rpc.AuthenticatedContext)
 					pub := c.RemotePublicKey()
 					require.NotNil(t, pub)
 					return x + y, pub, nil
@@ -76,7 +50,9 @@ func TestRPC(t *testing.T) {
 		t.Parallel()
 		sc, err := secure.NewSecureConn(conn0, k0, nil)
 		require.NoError(t, err)
-		rpc := New(sc, &h)
+
+		ec := conn.NewEncodedPacketConn[codec.CBOR](sc)
+		rpc := cbor.NewRPC(ec, &h)
 
 		var res int
 		require.NoError(t, rpc.Call(context.Background(), &res, "obj", "add", int(1), int(2)))
@@ -98,7 +74,9 @@ func TestRPC(t *testing.T) {
 		t.Parallel()
 		sc, err := secure.NewSecureConn(conn1, k1, nil)
 		require.NoError(t, err)
-		rpc := New(sc, &h)
+
+		ec := conn.NewEncodedPacketConn[codec.CBOR](sc)
+		rpc := cbor.NewRPC(ec, &h)
 
 		var res int
 		require.NoError(t, rpc.Call(context.Background(), &res, "obj", "add", int(1), int(2)))
