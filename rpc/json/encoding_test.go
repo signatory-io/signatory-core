@@ -14,6 +14,11 @@ func TestNilResponse(t *testing.T) {
 	msg := l.NewResponse(0, &rpc.Response[codec.JSON]{
 		Result: nil,
 	})
+	require.Equal(t, &Message{
+		ID:      0,
+		Version: "2.0",
+		Result:  json.RawMessage("null"),
+	}, &msg)
 	buf, err := json.Marshal(&msg)
 	require.NoError(t, err)
 	require.Equal(t, []byte("{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":null}"), buf)
@@ -24,6 +29,11 @@ func TestNonNilResponse(t *testing.T) {
 	msg := l.NewResponse(0, &rpc.Response[codec.JSON]{
 		Result: []byte("\"text\""),
 	})
+	require.Equal(t, &Message{
+		ID:      0,
+		Version: "2.0",
+		Result:  json.RawMessage("\"text\""),
+	}, &msg)
 	buf, err := json.Marshal(&msg)
 	require.NoError(t, err)
 	require.Equal(t, []byte("{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":\"text\"}"), buf)
@@ -48,7 +58,6 @@ func TestParseNilResponse(t *testing.T) {
 
 	res := m.GetResponse()
 	require.NotNil(t, res)
-	require.Nil(t, res.Result)
 }
 
 func TestParseInvalidResponse(t *testing.T) {
