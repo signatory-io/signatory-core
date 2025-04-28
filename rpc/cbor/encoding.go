@@ -12,13 +12,21 @@ type Message struct {
 	Response *Response `cbor:"2,keyasint,omitempty"`
 }
 
+func (m Message) IsValid() bool {
+	return m.Request != nil && m.Response == nil ||
+		m.Request == nil || m.Response != nil
+}
+
 func (m Message) GetID() uint64 { return m.ID }
 
 func (m Message) GetRequest() *rpc.Request {
 	if q := m.Request; q != nil {
-		params := make([][]byte, len(q.Parameters))
-		for i, p := range q.Parameters {
-			params[i] = []byte(p)
+		var params [][]byte
+		if len(q.Parameters) != 0 {
+			params = make([][]byte, len(q.Parameters))
+			for i, p := range q.Parameters {
+				params[i] = []byte(p)
+			}
 		}
 		return &rpc.Request{
 			Path:       q.Path,
@@ -31,17 +39,19 @@ func (m Message) GetRequest() *rpc.Request {
 
 func (m Message) GetResponse() *rpc.Response[codec.CBOR] {
 	if r := m.Response; r != nil {
-		out := &rpc.Response[codec.CBOR]{
-			Result: []byte(r.Result),
-		}
 		if e := r.Error; e != nil {
-			out.Error = &rpc.ErrorResponse[codec.CBOR]{
-				Code:    e.Code,
-				Message: e.Message,
-				Content: []byte(e.Content),
+			return &rpc.Response[codec.CBOR]{
+				Error: &rpc.ErrorResponse[codec.CBOR]{
+					Code:    e.Code,
+					Message: e.Message,
+					Content: []byte(e.Content),
+				},
+			}
+		} else {
+			return &rpc.Response[codec.CBOR]{
+				Result: []byte(r.Result),
 			}
 		}
-		return out
 	}
 	return nil
 }
@@ -54,34 +64,24 @@ type Request struct {
 
 type Response struct {
 	Result cbor.RawMessage `cbor:"0,keyasint,omitempty"`
-	Error  *ErrorResponse  `cbor:"1,keyasint,omitempty"`
+	Error  *Error          `cbor:"1,keyasint,omitempty"`
 }
 
-type ErrorResponse struct {
+type Error struct {
 	Code    int             `cbor:"0,keyasint,omitempty"`
 	Message string          `cbor:"1,keyasint,omitempty"`
 	Content cbor.RawMessage `cbor:"2,keyasint,omitempty"`
 }
 
-func (e *ErrorResponse) Error() string  { return e.Message }
-func (e *ErrorResponse) ErrorCode() int { return e.Code }
-
-func (e *ErrorResponse) ErrorContent(v any) (ok bool, err error) {
-	if e.Content == nil {
-		return false, nil
-	}
-	if err = cbor.Unmarshal(e.Content, v); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 type Layout struct{}
 
 func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
-	par := make([]cbor.RawMessage, len(r.Parameters))
-	for i, p := range r.Parameters {
-		par[i] = cbor.RawMessage(p)
+	var par []cbor.RawMessage
+	if len(r.Parameters) != 0 {
+		par = make([]cbor.RawMessage, len(r.Parameters))
+		for i, p := range r.Parameters {
+			par[i] = cbor.RawMessage(p)
+		}
 	}
 	return Message{
 		ID: id,
@@ -94,15 +94,15 @@ func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
 }
 
 func (Layout) NewResponse(id uint64, r *rpc.Response[codec.CBOR]) Message {
-	res := Response{
-		Result: cbor.RawMessage(r.Result),
-	}
+	var res Response
 	if e := r.Error; e != nil {
-		res.Error = &ErrorResponse{
+		res.Error = &Error{
 			Code:    e.Code,
 			Message: e.Message,
 			Content: cbor.RawMessage(e.Content),
 		}
+	} else {
+		res.Result = cbor.RawMessage(r.Result)
 	}
 	return Message{
 		ID:       id,

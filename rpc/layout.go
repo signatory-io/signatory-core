@@ -11,6 +11,7 @@ type Layout[C codec.Codec, M Message[C]] interface {
 }
 
 type Message[C codec.Codec] interface {
+	IsValid() bool
 	GetID() uint64
 	GetRequest() *Request
 	GetResponse() *Response[C]

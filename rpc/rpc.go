@@ -100,10 +100,10 @@ func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*
 	if t.NumIn()-idx != len(args) {
 		return mkErrorResponse[C](errors.New("invalid number of arguments"), CodeInvalidParams), nil
 	}
-	var cod C
+	var codec C
 	for i, arg := range args {
 		ptr := reflect.New(t.In(i + idx))
-		if err := cod.Unmarshal(arg, ptr.Interface()); err != nil {
+		if err := codec.Unmarshal(arg, ptr.Interface()); err != nil {
 			return mkErrorResponse[C](err, CodeParseError), nil
 		}
 		ins[i+idx] = ptr.Elem()
@@ -131,7 +131,7 @@ func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*
 			r = outs[0].Interface()
 		}
 		var err error
-		if result, err = cod.Marshal(r); err != nil {
+		if result, err = codec.Marshal(r); err != nil {
 			// shouldn't happen during normal operation
 			panic(err)
 		}
@@ -306,6 +306,9 @@ func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 		for {
 			select {
 			case m := <-in:
+				if !m.IsValid() {
+					continue Loop
+				}
 				if req := m.GetRequest(); req != nil {
 					// request to handler
 					if h != nil {
@@ -330,6 +333,7 @@ func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 						delete(awaiting, m.GetID())
 					}
 				}
+
 			case c := <-calls:
 				awaiting[msgID] = &c
 				var enc E
