@@ -41,30 +41,31 @@ type RootContext struct {
 }
 
 func (r *RootContextConfig) NewContext() (*RootContext, error) {
-	fileName := r.GetConfigFile()
-	buf, err := os.ReadFile(fileName)
-	if err != nil {
-		return nil, err
-	}
-	var conf configFile
-	if err := yaml.Unmarshal(buf, &conf); err != nil {
-		return nil, err
-	}
-
 	ctx := RootContext{
-		BaseDir:  r.GetBaseDir(),
-		Endpoint: conf.Endpoint,
+		BaseDir: r.GetBaseDir(),
 	}
+	var secure bool
+	buf, err := os.ReadFile(r.GetConfigFile())
+	if err == nil {
+		var conf configFile
+		if err = yaml.Unmarshal(buf, &conf); err != nil {
+			return nil, err
+		}
 
-	if r.Endpoint != "" && r.Flags.Changed("endpoint") {
-		ctx.Endpoint = r.Endpoint
+		ctx.Endpoint = conf.Endpoint
+		if r.Endpoint != "" && r.Flags.Changed("endpoint") {
+			ctx.Endpoint = r.Endpoint
+		}
+
+		secure = conf.Secure
+		if r.Flags.Changed("secure-connection") {
+			secure = r.Secure
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	} else {
+		ctx.Endpoint = r.GetEndpoint()
 	}
-
-	secure := conf.Secure
-	if r.Flags.Changed("secure-connection") {
-		secure = r.Secure
-	}
-
 	if secure {
 		id, err := r.LoadIdentity()
 		if err != nil {

@@ -9,13 +9,11 @@ import (
 )
 
 type Service struct {
-	SM vault.SecretManager
+	vault.SecretManager
 }
 
 func (s Service) RegisterSelf(h *rpc.Handler) {
-	h.RegisterObject("sm", rpc.MethodTable{
-		"getSecret": rpc.NewMethod(s.SM.GetSecret),
-	})
+	h.RegisterModule("sm", s)
 }
 
 type Proxy struct {
@@ -29,5 +27,5 @@ func (p Proxy) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg cry
 
 var (
 	_ vault.SecretManager = (*Proxy)(nil)
-	_ rpc.RPCObject       = (*Service)(nil)
+	_ rpc.Module          = (*Service)(nil)
 )

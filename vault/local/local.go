@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -52,6 +53,9 @@ func (l *localKey) getSigner(ctx context.Context, sm vault.SecretManager) (crypt
 	if dec != nil {
 		return dec.priv, nil
 	}
+	if sm == nil {
+		return nil, vault.ErrLocked
+	}
 
 	pkh := crypto.NewPublicKeyHash(l.pub)
 	pwd, err := sm.GetSecret(ctx, pkh, l.pub.PublicKeyType(), vault.GetSecretHintSign)
@@ -69,8 +73,8 @@ func (l *localKey) getSigner(ctx context.Context, sm vault.SecretManager) (crypt
 	return signer, nil
 }
 
-func (l *localKey) SignMessage(ctx context.Context, message []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
-	signer, err := l.getSigner(ctx, sc)
+func (l *localKey) SignMessage(ctx context.Context, message []byte, sm vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
+	signer, err := l.getSigner(ctx, sm)
 	if err != nil {
 		return nil, vault.WrapError(l.v, err)
 	}
@@ -81,8 +85,8 @@ func (l *localKey) SignMessage(ctx context.Context, message []byte, sc vault.Sec
 	return sig, nil
 }
 
-func (l *localKey) SignDigest(ctx context.Context, digest []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
-	signer, err := l.getSigner(ctx, sc)
+func (l *localKey) SignDigest(ctx context.Context, digest []byte, sm vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
+	signer, err := l.getSigner(ctx, sm)
 	if err != nil {
 		return nil, vault.WrapError(l.v, err)
 	}
@@ -101,7 +105,7 @@ func (l *localKey) IsLocked() bool {
 	return l.decrypted == nil
 }
 
-func (l *localKey) Unlock(ctx context.Context, uc vault.SecretManager) error {
+func (l *localKey) Unlock(ctx context.Context, sm vault.SecretManager) error {
 	l.v.mtx.RLock()
 	if l.decrypted != nil {
 		l.v.mtx.RUnlock()
@@ -110,7 +114,7 @@ func (l *localKey) Unlock(ctx context.Context, uc vault.SecretManager) error {
 	l.v.mtx.RUnlock()
 
 	pkh := crypto.NewPublicKeyHash(l.pub)
-	pwd, err := uc.GetSecret(ctx, pkh, l.pub.PublicKeyType(), vault.GetSecretHintUnlock)
+	pwd, err := sm.GetSecret(ctx, pkh, l.pub.PublicKeyType(), vault.GetSecretHintUnlock)
 	if err != nil {
 		return vault.WrapError(l.v, err)
 	}
@@ -257,6 +261,9 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 	encrypt := options != nil && options.Encrypt()
 	var secret []byte
 	if encrypt {
+		if sm == nil {
+			return nil, vault.WrapError(l, errors.New("SecretManager is not specified"))
+		}
 		if secret, err = sm.GetSecret(ctx, pkh, alg, vault.GetSecretHintGenerate); err != nil {
 			return nil, vault.WrapError(l, err)
 		}

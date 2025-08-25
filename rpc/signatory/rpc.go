@@ -8,7 +8,7 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/cose"
 	"github.com/signatory-io/signatory-core/rpc"
 	uirpc "github.com/signatory-io/signatory-core/rpc/ui"
-	"github.com/signatory-io/signatory-core/signatory"
+	"github.com/signatory-io/signatory-core/signer"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 )
@@ -19,19 +19,14 @@ const (
 )
 
 type Service struct {
-	Signatory *signatory.Signatory
+	Signatory *signer.Signer
 }
 
 func (s *Service) RegisterSelf(h *rpc.Handler) {
-	h.RegisterObject("sig", rpc.MethodTable{
-		"listKeys":    rpc.NewMethod(s.listKeys),
-		"listVaults":  rpc.NewMethod(s.listVaults),
-		"unlockKey":   rpc.NewMethod(s.unlockKey),
-		"generateKey": rpc.NewMethod(s.generateKey),
-	})
+	h.RegisterModule("sig", s)
 }
 
-func (s *Service) listKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
+func (s *Service) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
 	it := s.Signatory.ListKeys(ctx, vaultID, filter)
 	for key := range it.Keys() {
 		pub := key.PublicKey()
@@ -56,7 +51,7 @@ func (s *Service) listKeys(ctx context.Context, vaultID string, filter []crypto.
 	return
 }
 
-func (s *Service) listVaults() (infos []VaultInfo, err error) {
+func (s *Service) ListVaults() (infos []VaultInfo, err error) {
 	for v := range s.Signatory.ListVaults() {
 		infos = append(infos, VaultInfo{
 			ID:           v.ID(),
@@ -67,7 +62,7 @@ func (s *Service) listVaults() (infos []VaultInfo, err error) {
 	return
 }
 
-func (s *Service) generateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
+func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
 	c := rpc.GetContext(ctx)
 	secretManager := ui.InteractiveSecretManager{
 		UI: uirpc.Proxy{
@@ -80,7 +75,7 @@ func (s *Service) generateKey(ctx context.Context, vaultID string, alg crypto.Al
 	}
 	gen, ok := vi.Vault().(vault.Generator)
 	if !ok {
-		return nil, rpc.WrapError(errors.New("key generation is not supported"), signatory.FeatureNotSupported)
+		return nil, rpc.WrapError(errors.New("key generation is not supported"), signer.ErrFeatureNotSupported)
 	}
 	key, err := gen.Generate(ctx, alg, secretManager, options)
 	if err != nil {
@@ -103,7 +98,7 @@ func (s *Service) generateKey(ctx context.Context, vaultID string, alg crypto.Al
 	return &keyInfo, nil
 }
 
-func (s *Service) unlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
+func (s *Service) UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
 	c := rpc.GetContext(ctx)
 	secretManager := ui.InteractiveSecretManager{
 		UI: uirpc.Proxy{

@@ -7,12 +7,12 @@ import (
 	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
-func GenerateRecoveryCode(s *Signature, pub *PublicKey, digest []byte) (*Signature, error) {
-	if s.HasRecoveryCode {
-		return s, nil
+func GenerateRecoveryCode(sig *Signature, pub *PublicKey, digest []byte) (*Signature, error) {
+	if sig.HasRecoveryCode {
+		return sig, nil
 	}
-	if s.Curve != Secp256k1 {
-		return nil, fmt.Errorf("recovery code generation for %v curve is not supported", s.Curve)
+	if sig.Curve != Secp256k1 {
+		return nil, fmt.Errorf("recovery code generation for %v curve is not supported", sig.Curve)
 	}
 	/*
 		Note from Etherium libsecp256k1:
@@ -23,8 +23,8 @@ func GenerateRecoveryCode(s *Signature, pub *PublicKey, digest []byte) (*Signatu
 		Thus just two candidates --eugene
 	*/
 	var out [65]byte
-	s.R.FillBytes(out[1:33])
-	s.S.FillBytes(out[33:65])
+	sig.R.FillBytes(out[1:33])
+	sig.S.FillBytes(out[33:65])
 	var v int
 	for v = 0; v < 2; v++ {
 		out[0] = byte(v) + 27
@@ -40,9 +40,33 @@ func GenerateRecoveryCode(s *Signature, pub *PublicKey, digest []byte) (*Signatu
 		return nil, errors.New("error generating recovery code")
 	}
 	return &Signature{
-		R:               s.R,
-		S:               s.S,
+		R:               sig.R,
+		S:               sig.S,
 		HasRecoveryCode: true,
 		RecoveryCode:    uint8(v),
+	}, nil
+}
+
+func Recover(sig *Signature, digest []byte) (*PublicKey, error) {
+	if !sig.HasRecoveryCode {
+		return nil, errors.New("signature has no recovery code")
+	}
+	if sig.Curve != Secp256k1 {
+		return nil, fmt.Errorf("recovery code generation for %v curve is not supported", sig.Curve)
+	}
+
+	var compact [65]byte
+	compact[0] = sig.RecoveryCode + 27
+	sig.R.FillBytes(compact[1:33])
+	sig.S.FillBytes(compact[33:65])
+
+	pubkey, _, err := secp256k1ecdsa.RecoverCompact(compact[:], digest)
+	if err != nil {
+		return nil, err
+	}
+	return &PublicKey{
+		Curve: Secp256k1,
+		X:     pubkey.X(),
+		Y:     pubkey.Y(),
 	}, nil
 }

@@ -34,7 +34,7 @@ func TestRPC(t *testing.T) {
 	require.NoError(t, err)
 
 	h := rpc.Handler{
-		Objects: map[string]rpc.MethodTable{
+		Modules: map[string]rpc.MethodTable{
 			"obj": {
 				"add": rpc.NewMethod(func(x, y int) (int, error) { return x + y, nil }),
 				"with_ctx": rpc.NewMethod(func(ctx context.Context, x, y int) (int, *ed25519.PublicKey, error) {

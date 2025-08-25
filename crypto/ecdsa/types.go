@@ -123,24 +123,29 @@ type Signature struct {
 	R, S            *big.Int
 	HasRecoveryCode bool
 	RecoveryCode    uint8
+	Legacy          bool
 }
 
 // Bytes returns a raw 2*FieldBytes long signature of 2*FieldBytes+1 if recovery code is present.
 // Recoverable signature is stored in EVM format [R|S|V]
 func (s *Signature) Bytes() []byte {
-	sz := s.Curve.FieldBytes()
-	if sz == 0 {
+	fieldBytes := s.Curve.FieldBytes()
+	if fieldBytes == 0 {
 		panic("unknown field size")
 	}
-	sigLen := sz * 2
+	sz := fieldBytes * 2
 	if s.HasRecoveryCode {
-		sigLen += 1
+		sz += 1
 	}
-	out := make([]byte, sigLen)
-	s.R.FillBytes(out[:sz])
-	s.S.FillBytes(out[sz : sz*2])
+	out := make([]byte, sz)
+	s.R.FillBytes(out[:fieldBytes])
+	s.S.FillBytes(out[fieldBytes : fieldBytes*2])
 	if s.HasRecoveryCode {
-		out[sz*2] = s.RecoveryCode
+		if s.Legacy {
+			out[fieldBytes*2] = s.RecoveryCode + 27
+		} else {
+			out[fieldBytes*2] = s.RecoveryCode
+		}
 	}
 	return out
 }
@@ -156,17 +161,29 @@ func (s *Signature) DERBytes() []byte {
 
 func (s *Signature) SignatureAlgorithm() crypto.Algorithm { return s.Curve.Algorithm() }
 
-func NewSignatureFromBytes(data []byte, curve Curve) (*Signature, error) {
-	sz := curve.FieldBytes()
-	if len(data) != sz*2 {
+func NewSignatureFromBytes(data []byte, curve Curve, hasRecoveryCode bool) (*Signature, error) {
+	fieldBytes := curve.FieldBytes()
+	if fieldBytes == 0 {
+		panic("unknown field size")
+	}
+	sz := fieldBytes * 2
+	if hasRecoveryCode {
+		sz += 1
+	}
+	if len(data) != sz {
 		return nil, fmt.Errorf("unexpected signature length: %d", len(data))
 	}
 	var (
 		r, s big.Int
 	)
-	r.SetBytes(data[:sz])
-	s.SetBytes(data[sz:])
-	return &Signature{R: &r, S: &s, Curve: curve}, nil
+	r.SetBytes(data[:fieldBytes])
+	s.SetBytes(data[fieldBytes : fieldBytes*2])
+	sig := Signature{R: &r, S: &s, Curve: curve}
+	if hasRecoveryCode {
+		sig.HasRecoveryCode = true
+		sig.RecoveryCode = data[fieldBytes*2]
+	}
+	return &sig, nil
 }
 
 func NewSignatureFromDERBytes(data []byte, curve Curve) (*Signature, error) {

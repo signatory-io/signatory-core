@@ -39,15 +39,14 @@ type confirmation struct {
 }
 
 func (r Service) RegisterSelf(h *rpc.Handler) {
-	h.RegisterObject("ui", rpc.MethodTable{
-		"dialog": rpc.NewMethod(r.dialog),
-		"errorMessage": rpc.NewMethod(func(ctx context.Context, msg string) error {
-			return r.UI.ErrorMessage(ctx, msg)
-		}),
-	})
+	h.RegisterModule("ui", r)
 }
 
-func (r Service) dialog(ctx context.Context, dialog *rpcDialog) (results []any, err error) {
+func (r Service) ErrorMessage(ctx context.Context, msg string) error {
+	return r.UI.ErrorMessage(ctx, msg)
+}
+
+func (r Service) Dialog(ctx context.Context, dialog *rpcDialog) (results []any, err error) {
 	d := ui.Dialog{
 		Title: dialog.Title,
 		Items: make([]ui.Item, 0, len(dialog.Items)),
@@ -174,6 +173,6 @@ func (p Proxy) ErrorMessage(ctx context.Context, msg string) error {
 }
 
 var (
-	_ rpc.RPCObject = Service{}
-	_ ui.UI         = Proxy{}
+	_ rpc.Module = Service{}
+	_ ui.UI      = Proxy{}
 )

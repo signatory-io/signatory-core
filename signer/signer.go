@@ -1,4 +1,4 @@
-package signatory
+package signer
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 const (
 	CodeVaultNotFound = 1 + iota
 	CodeKeyNotFound
-	FeatureNotSupported
+	ErrFeatureNotSupported
 )
 
 type vaultInst struct {
@@ -26,7 +26,7 @@ type vaultInst struct {
 func (i *vaultInst) ID() string         { return i.id }
 func (i *vaultInst) Vault() vault.Vault { return i.vault }
 
-type Signatory struct {
+type Signer struct {
 	vaults     []*vaultInst
 	vaultIndex map[string]*vaultInst
 	cache      map[crypto.PublicKeyHash]keyRef
@@ -51,7 +51,7 @@ func (errIter) Keys() iter.Seq[KeyReference] { return func(yield func(KeyReferen
 func (e errIter) Err() error                 { return e.err }
 
 type keyIter struct {
-	s      *Signatory
+	s      *Signer
 	vaults iter.Seq[*vaultInst]
 	ctx    context.Context
 	filter []crypto.Algorithm
@@ -100,7 +100,7 @@ func (k keyRef) Unlock(ctx context.Context, sm vault.SecretManager) error {
 	return nil
 }
 
-func (s *Signatory) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) KeyIterator {
+func (s *Signer) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) KeyIterator {
 	var vaults iter.Seq[*vaultInst]
 	if vaultID != "" {
 		v, ok := s.vaultIndex[vaultID]
@@ -119,7 +119,7 @@ func (s *Signatory) ListKeys(ctx context.Context, vaultID string, filter []crypt
 	}
 }
 
-func (s *Signatory) updateCache(key keyRef) {
+func (s *Signer) updateCache(key keyRef) {
 	pkh := crypto.NewPublicKeyHash(key.PublicKey())
 	s.cacheMtx.Lock()
 	defer s.cacheMtx.Unlock()
@@ -131,8 +131,8 @@ type VaultInfo interface {
 	Vault() vault.Vault
 }
 
-func New(vaults map[string]vault.Vault) *Signatory {
-	s := &Signatory{
+func New(vaults map[string]vault.Vault) *Signer {
+	s := &Signer{
 		vaults:     make([]*vaultInst, 0, len(vaults)),
 		vaultIndex: make(map[string]*vaultInst),
 		cache:      make(map[crypto.PublicKeyHash]keyRef),
@@ -150,7 +150,7 @@ func New(vaults map[string]vault.Vault) *Signatory {
 	return s
 }
 
-func (s *Signatory) ListVaults() iter.Seq[VaultInfo] {
+func (s *Signer) ListVaults() iter.Seq[VaultInfo] {
 	return func(yield func(VaultInfo) bool) {
 		for _, v := range s.vaults {
 			if !yield(v) {
@@ -160,7 +160,7 @@ func (s *Signatory) ListVaults() iter.Seq[VaultInfo] {
 	}
 }
 
-func (s *Signatory) GetVault(id string) (VaultInfo, error) {
+func (s *Signer) GetVault(id string) (VaultInfo, error) {
 	v, ok := s.vaultIndex[id]
 	if !ok {
 		return nil, rpc.WrapError(fmt.Errorf("vault instance %s is not found", id), CodeVaultNotFound)
@@ -168,7 +168,7 @@ func (s *Signatory) GetVault(id string) (VaultInfo, error) {
 	return v, nil
 }
 
-func (s *Signatory) GetKey(ctx context.Context, pkh *crypto.PublicKeyHash) (KeyReference, error) {
+func (s *Signer) GetKey(ctx context.Context, pkh *crypto.PublicKeyHash) (KeyReference, error) {
 	s.cacheMtx.RLock()
 	ref, ok := s.cache[*pkh]
 	s.cacheMtx.RUnlock()

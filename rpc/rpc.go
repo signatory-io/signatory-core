@@ -10,35 +10,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/rpc/conn"
 	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn/secure"
-)
-
-type Error interface {
-	error
-	ErrorCode() int
-}
-
-type errorEx interface {
-	Error
-	ErrorContent() any
-}
-
-type ErrorEx interface {
-	Error
-	ErrorContent(v any) (ok bool, err error)
-}
-
-const (
-	CodeInvalidRequest = -32600
-	CodeMethodNotFound = -32601
-	CodeInvalidParams  = -32602
-	CodeInternalError  = -32603
-	CodeParseError     = -32700
-	CodeObjectNotFound = -32800
 )
 
 type Method struct {
@@ -61,7 +38,7 @@ func mkErrorResponse[C codec.Codec](err error, code int) *Response[C] {
 		ret.Code = code
 	}
 	if ret.Code == 0 {
-		ret.Code = CodeInternalError
+		ret.Code = CodeDefault
 	}
 	return &Response[C]{Error: ret}
 }
@@ -144,9 +121,8 @@ var (
 	errType = reflect.TypeOf((*error)(nil)).Elem()
 )
 
-func NewMethod(f any) *Method {
+func newMethod(fn reflect.Value) *Method {
 	// basic sanity check
-	fn := reflect.ValueOf(f)
 	t := fn.Type()
 	if t.Kind() != reflect.Func {
 		panic("not a function")
@@ -162,32 +138,59 @@ func NewMethod(f any) *Method {
 	}
 }
 
+func NewMethod(f any) *Method {
+	return newMethod(reflect.ValueOf(f))
+}
+
 type MethodTable map[string]*Method
 
 type Handler struct {
-	Objects map[string]MethodTable
+	Modules map[string]MethodTable
 }
 
-func NewHandler() *Handler { return &Handler{Objects: map[string]MethodTable{}} }
+func NewHandler() *Handler { return &Handler{Modules: map[string]MethodTable{}} }
 
-func (h *Handler) RegisterObject(path string, methods MethodTable) {
-	if _, ok := h.Objects[path]; ok {
+func (h *Handler) RegisterModuleMethodTable(path string, methods MethodTable) {
+	if _, ok := h.Modules[path]; ok {
 		panic(fmt.Sprintf("rpc: path %s is already in use", path))
 	}
-	h.Objects[path] = methods
+	h.Modules[path] = methods
 }
 
-func (h *Handler) Register(obj RPCObject) { obj.RegisterSelf(h) }
+func (h *Handler) RegisterModule(path string, object any) {
+	if _, ok := h.Modules[path]; ok {
+		panic(fmt.Sprintf("rpc: path %s is already in use", path))
+	}
 
-type RPCObject interface {
+	v := reflect.ValueOf(object)
+	t := v.Type()
+	numMethod := v.NumMethod()
+	table := make(MethodTable, numMethod)
+
+	for i := range v.NumMethod() {
+		methodDesc := t.Method(i)
+		var cc strings.Builder
+		for i, r := range methodDesc.Name {
+			if i == 0 {
+				r = unicode.ToLower(r)
+			}
+			cc.WriteRune(r)
+		}
+		table[cc.String()] = newMethod(v.Method(i))
+	}
+}
+
+func (h *Handler) Register(obj Module) { obj.RegisterSelf(h) }
+
+type Module interface {
 	RegisterSelf(h *Handler)
 }
 
 func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
 	p := strings.Join(req.Path, "/")
-	table, ok := h.Objects[p]
+	table, ok := h.Modules[p]
 	if !ok {
-		return mkErrorResponse[C](fmt.Errorf("object path `%s' is not found", p), CodeObjectNotFound), nil
+		return mkErrorResponse[C](fmt.Errorf("object path `%s' is not found", p), CodeModuleNotFound), nil
 	}
 	m, ok := table[req.Method]
 	if !ok {
