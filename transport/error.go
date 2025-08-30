@@ -1,4 +1,4 @@
-package rpc
+package transport
 
 const (
 	CodeServerError    = -32000

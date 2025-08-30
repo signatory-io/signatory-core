@@ -2,8 +2,8 @@ package cbor
 
 import (
 	"github.com/fxamacker/cbor/v2"
-	"github.com/signatory-io/signatory-core/rpc"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
 type Message struct {
@@ -19,7 +19,7 @@ func (m Message) IsValid() bool {
 
 func (m Message) GetID() uint64 { return m.ID }
 
-func (m Message) GetRequest() *rpc.Request {
+func (m Message) GetRequest() *protocol.Request {
 	if q := m.Request; q != nil {
 		var params [][]byte
 		if len(q.Parameters) != 0 {
@@ -28,7 +28,7 @@ func (m Message) GetRequest() *rpc.Request {
 				params[i] = []byte(p)
 			}
 		}
-		return &rpc.Request{
+		return &protocol.Request{
 			Path:       q.Path,
 			Method:     q.Method,
 			Parameters: params,
@@ -37,18 +37,18 @@ func (m Message) GetRequest() *rpc.Request {
 	return nil
 }
 
-func (m Message) GetResponse() *rpc.Response[codec.CBOR] {
+func (m Message) GetResponse() *protocol.Response[codec.CBOR] {
 	if r := m.Response; r != nil {
 		if e := r.Error; e != nil {
-			return &rpc.Response[codec.CBOR]{
-				Error: &rpc.ErrorResponse[codec.CBOR]{
+			return &protocol.Response[codec.CBOR]{
+				Error: &protocol.ErrorResponse[codec.CBOR]{
 					Code:    e.Code,
 					Message: e.Message,
 					Content: []byte(e.Content),
 				},
 			}
 		} else {
-			return &rpc.Response[codec.CBOR]{
+			return &protocol.Response[codec.CBOR]{
 				Result: []byte(r.Result),
 			}
 		}
@@ -75,7 +75,7 @@ type Error struct {
 
 type Layout struct{}
 
-func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
+func (Layout) NewRequest(id uint64, r *protocol.Request) Message {
 	var par []cbor.RawMessage
 	if len(r.Parameters) != 0 {
 		par = make([]cbor.RawMessage, len(r.Parameters))
@@ -93,20 +93,20 @@ func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
 	}
 }
 
-func (Layout) NewResponse(id uint64, r *rpc.Response[codec.CBOR]) Message {
-	var res Response
-	if e := r.Error; e != nil {
-		res.Error = &Error{
+func (Layout) NewResponse(id uint64, res *protocol.Response[codec.CBOR]) Message {
+	var r Response
+	if e := res.Error; e != nil {
+		r.Error = &Error{
 			Code:    e.Code,
 			Message: e.Message,
 			Content: cbor.RawMessage(e.Content),
 		}
 	} else {
-		res.Result = cbor.RawMessage(r.Result)
+		r.Result = cbor.RawMessage(res.Result)
 	}
 	return Message{
 		ID:       id,
-		Response: &res,
+		Response: &r,
 	}
 }
 

@@ -3,7 +3,7 @@ package signatorycli
 import (
 	"fmt"
 
-	"github.com/signatory-io/signatory-core/rpc/signatory"
+	"github.com/signatory-io/signatory-core/signatory"
 	"github.com/spf13/cobra"
 )
 

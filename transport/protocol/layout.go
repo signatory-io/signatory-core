@@ -1,12 +1,12 @@
-package rpc
+package protocol
 
 import (
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
+	"github.com/signatory-io/signatory-core/transport/codec"
 )
 
 type Layout[C codec.Codec, M Message[C]] interface {
-	NewRequest(id uint64, r *Request) M
-	NewResponse(id uint64, r *Response[C]) M
+	NewRequest(id uint64, req *Request) M
+	NewResponse(id uint64, res *Response[C]) M
 	Codec() C
 }
 

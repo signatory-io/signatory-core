@@ -1,4 +1,4 @@
-package rpc
+package transport
 
 import (
 	"context"
@@ -13,17 +13,21 @@ import (
 	"unicode"
 
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/conn"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
-	"github.com/signatory-io/signatory-core/rpc/conn/secure"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/conn"
+	"github.com/signatory-io/signatory-core/transport/conn/rpc/secure"
+	"github.com/signatory-io/signatory-core/transport/protocol"
 )
+
+var aLongTimeAgo = time.Unix(1, 0)
+var ErrCanceled = errors.New("canceled")
 
 type Method struct {
 	fn reflect.Value
 }
 
-func mkErrorResponse[C codec.Codec](err error, code int) *Response[C] {
-	ret := &ErrorResponse[C]{
+func mkErrorResponse[C codec.Codec](err error, code int) *protocol.Response[C] {
+	ret := &protocol.ErrorResponse[C]{
 		Message: err.Error(),
 	}
 	var cod C
@@ -40,7 +44,7 @@ func mkErrorResponse[C codec.Codec](err error, code int) *Response[C] {
 	if ret.Code == 0 {
 		ret.Code = CodeDefault
 	}
-	return &Response[C]{Error: ret}
+	return &protocol.Response[C]{Error: ret}
 }
 
 type Context interface {
@@ -59,14 +63,8 @@ type Caller interface {
 	Call(ctx context.Context, result any, objPath, method string, args ...any) (err error)
 }
 
-type rpcCtxKey struct{}
-
-func GetContext(ctx context.Context) Context {
-	return ctx.Value(rpcCtxKey{}).(Context)
-}
-
 // error is returned only in case of the context cancellation
-func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*Response[C], error) {
+func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*protocol.Response[C], error) {
 	t := m.fn.Type()
 	idx := 0
 	ins := make([]reflect.Value, t.NumIn())
@@ -113,7 +111,7 @@ func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*
 			panic(err)
 		}
 	}
-	return &Response[C]{Result: result}, nil
+	return &protocol.Response[C]{Result: result}, nil
 }
 
 var (
@@ -186,7 +184,7 @@ type Module interface {
 	RegisterSelf(h *Handler)
 }
 
-func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
+func HandleCall[C codec.Codec](h *Handler, ctx context.Context, req *protocol.Request) (*protocol.Response[C], error) {
 	p := strings.Join(req.Path, "/")
 	table, ok := h.Modules[p]
 	if !ok {
@@ -199,52 +197,108 @@ func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*
 	return callMethod[C](m, ctx, req.Parameters)
 }
 
-type rpcCall[C codec.Codec] struct {
-	req *Request
-	res chan<- *Response[C]
+type apiCall[C codec.Codec] struct {
+	req *protocol.Request
+	res chan<- *protocol.Response[C]
 	err chan<- error
 }
 
-type RPC[C codec.Codec] struct {
-	calls  chan<- rpcCall[C]
+type apiCtx[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]] struct {
+	conn.EncodedConn[C, P, M]
+	api *API[C]
+}
+
+func (c *apiCtx[C, P, M]) Peer() Caller { return c.api }
+
+type apiAuthCtx[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]] struct {
+	*apiCtx[C, P, M]
+	conn.AuthenticatedConn
+}
+
+type API[C codec.Codec] struct {
+	calls  chan<- apiCall[C]
 	cancel chan<- struct{}
 	done   <-chan struct{}
 	err    error
 }
 
-var aLongTimeAgo = time.Unix(1, 0)
-var ErrCanceled = errors.New("canceled")
+func (r *API[C]) Done() <-chan struct{} { return r.done }
+func (r *API[C]) Err() error            { return r.err }
 
-type rpcCtx[C codec.Codec] struct {
-	conn.EncodedConn[C]
-	rpc *RPC[C]
+func (r *API[C]) Call(ctx context.Context, result any, objPath, method string, args ...any) (err error) {
+	params := make([][]byte, len(args))
+	var codec C
+	for i, arg := range args {
+		if params[i], err = codec.Marshal(arg); err != nil {
+			return err
+		}
+	}
+	req := protocol.Request{
+		Path:       strings.Split(objPath, "/"),
+		Method:     method,
+		Parameters: params,
+	}
+
+	resCh := make(chan *protocol.Response[C], 1)
+	errCh := make(chan error)
+	call := apiCall[C]{
+		req: &req,
+		res: resCh,
+		err: errCh,
+	}
+	select {
+	case r.calls <- call:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	var res *protocol.Response[C]
+	select {
+	case res = <-resCh:
+	case err = <-errCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.Result != nil && result != nil {
+		return codec.Unmarshal(res.Result, result)
+	}
+	return nil
 }
 
-func (c *rpcCtx[C]) Peer() Caller { return c.rpc }
-
-type rpcAuthCtx[C codec.Codec] struct {
-	*rpcCtx[C]
-	secure.AuthenticatedConn
+func (r *API[C]) Close() error {
+	close(r.cancel)
+	<-r.done
+	return r.err
 }
 
-func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], rpc *RPC[C]) context.Context {
-	c := &rpcCtx[C]{
+type apiCtxKey struct{}
+
+func GetContext(ctx context.Context) Context {
+	return ctx.Value(apiCtxKey{}).(Context)
+}
+
+func mkCallCtx[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]](ctx context.Context, conn conn.EncodedConn[C, P, M], api *API[C]) context.Context {
+	c := &apiCtx[C, P, M]{
 		EncodedConn: conn,
-		rpc:         rpc,
+		api:         api,
 	}
 	var val any
 	if auth, ok := conn.Inner().(secure.AuthenticatedConn); ok {
-		val = &rpcAuthCtx[C]{
-			rpcCtx:            c,
+		val = &apiAuthCtx[C, P, M]{
+			apiCtx:            c,
 			AuthenticatedConn: auth,
 		}
 	} else {
 		val = c
 	}
-	return context.WithValue(ctx, rpcCtxKey{}, val)
+	return context.WithValue(ctx, apiCtxKey{}, val)
 }
 
-func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](conn T, h *Handler) *RPC[C] {
+func New[E protocol.Layout[C, M], C codec.Codec, M protocol.Message[C], T conn.EncodedConn[C, P, M], P protocol.Protocol[C, M]](conn T, h *Handler) *API[C] {
+
 	in := make(chan M)
 	readErrCh := make(chan error)
 
@@ -283,18 +337,19 @@ func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 		writeErrCh <- err
 	}()
 
-	calls := make(chan rpcCall[C])
+	calls := make(chan apiCall[C])
 	dispatcherCancel := make(chan struct{})
 	done := make(chan struct{})
 
-	rpc := &RPC[C]{
+	api := &API[C]{
 		calls:  calls,
 		cancel: dispatcherCancel,
 		done:   done,
 	}
 
-	awaiting := make(map[uint64]*rpcCall[C])
-	msgID := uint64(0)
+	awaiting := make(map[uint64]*apiCall[C])
+	msgID := uint64(1) // use 1 in case the ID is not set properly
+	// TODO: timeout for calls
 
 	// main dispatcher loop
 	go func() {
@@ -318,8 +373,8 @@ func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 						handlersWG.Add(1)
 						go func() {
 							id := m.GetID()
-							ctx := mkCallCtx(handlersCtx, conn, rpc)
-							res, err := handleCall[C](h, ctx, req)
+							ctx := mkCallCtx[C, P](handlersCtx, conn, api)
+							res, err := HandleCall[C](h, ctx, req)
 							if err == nil {
 								// all errors except ErrCanceled are returned back
 								var enc E
@@ -386,61 +441,9 @@ func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 		if err == nil {
 			err = cErr
 		}
-		rpc.err = err
+		api.err = err
 		close(done)
 	}()
 
-	return rpc
-}
-
-func (r *RPC[C]) Done() <-chan struct{} { return r.done }
-func (r *RPC[C]) Err() error            { return r.err }
-
-func (r *RPC[C]) Call(ctx context.Context, result any, objPath, method string, args ...any) (err error) {
-	params := make([][]byte, len(args))
-	var codec C
-	for i, arg := range args {
-		if params[i], err = codec.Marshal(arg); err != nil {
-			return err
-		}
-	}
-	req := Request{
-		Path:       strings.Split(objPath, "/"),
-		Method:     method,
-		Parameters: params,
-	}
-
-	resCh := make(chan *Response[C], 1)
-	errCh := make(chan error)
-	call := rpcCall[C]{
-		req: &req,
-		res: resCh,
-		err: errCh,
-	}
-	select {
-	case r.calls <- call:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	var res *Response[C]
-	select {
-	case res = <-resCh:
-	case err = <-errCh:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.Result != nil && result != nil {
-		return codec.Unmarshal(res.Result, result)
-	}
-	return nil
-}
-
-func (r *RPC[C]) Close() error {
-	close(r.cancel)
-	<-r.done
-	return r.err
+	return api
 }

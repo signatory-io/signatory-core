@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/signatory-io/signatory-core/rpc"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
 type Message struct {
@@ -34,7 +34,7 @@ func (m Message) IsValid() bool {
 
 func (m Message) GetID() uint64 { return m.ID }
 
-func (m Message) GetRequest() *rpc.Request {
+func (m Message) GetRequest() *protocol.Request {
 	if m.Method != "" {
 		var params [][]byte
 		if len(m.Parameters) != 0 {
@@ -50,7 +50,7 @@ func (m Message) GetRequest() *rpc.Request {
 		} else {
 			method = pm[0]
 		}
-		return &rpc.Request{
+		return &protocol.Request{
 			Path:       []string{path},
 			Method:     method,
 			Parameters: params,
@@ -59,17 +59,17 @@ func (m Message) GetRequest() *rpc.Request {
 	return nil
 }
 
-func (m Message) GetResponse() *rpc.Response[codec.JSON] {
+func (m Message) GetResponse() *protocol.Response[codec.JSON] {
 	if e := m.Error; e != nil {
-		return &rpc.Response[codec.JSON]{
-			Error: &rpc.ErrorResponse[codec.JSON]{
+		return &protocol.Response[codec.JSON]{
+			Error: &protocol.ErrorResponse[codec.JSON]{
 				Code:    e.Code,
 				Message: e.Message,
 				Content: []byte(e.Content),
 			},
 		}
 	} else if m.Result != nil {
-		return &rpc.Response[codec.JSON]{
+		return &protocol.Response[codec.JSON]{
 			Result: []byte(m.Result),
 		}
 	}
@@ -78,7 +78,7 @@ func (m Message) GetResponse() *rpc.Response[codec.JSON] {
 
 type Layout struct{}
 
-func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
+func (Layout) NewRequest(id uint64, r *protocol.Request) Message {
 	var par []json.RawMessage
 	if len(r.Parameters) != 0 {
 		par = make([]json.RawMessage, len(r.Parameters))
@@ -96,20 +96,20 @@ func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
 
 var null = json.RawMessage("null")
 
-func (Layout) NewResponse(id uint64, r *rpc.Response[codec.JSON]) Message {
+func (Layout) NewResponse(id uint64, res *protocol.Response[codec.JSON]) Message {
 	msg := Message{
 		Version: Version,
 		ID:      id,
 	}
-	if e := r.Error; e != nil {
+	if e := res.Error; e != nil {
 		msg.Error = &Error{
 			Code:    e.Code,
 			Message: e.Message,
 			Content: json.RawMessage(e.Content),
 		}
 	} else {
-		if r.Result != nil {
-			msg.Result = json.RawMessage(r.Result)
+		if res.Result != nil {
+			msg.Result = json.RawMessage(res.Result)
 		} else {
 			msg.Result = null
 		}

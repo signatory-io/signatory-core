@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/signatory-io/signatory-core/rpc"
+	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/ui"
 )
 
@@ -38,7 +38,7 @@ type confirmation struct {
 	Prompt string `cbor:"0,keyasint,omitempty"`
 }
 
-func (r Service) RegisterSelf(h *rpc.Handler) {
+func (r Service) RegisterSelf(h *transport.Handler) {
 	h.RegisterModule("ui", r)
 }
 
@@ -91,7 +91,7 @@ func (r Service) Dialog(ctx context.Context, dialog *rpcDialog) (results []any, 
 }
 
 type Proxy struct {
-	RPC rpc.Caller
+	RPC transport.Caller
 }
 
 func (p Proxy) Dialog(ctx context.Context, dialog *ui.Dialog) error {
@@ -173,6 +173,6 @@ func (p Proxy) ErrorMessage(ctx context.Context, msg string) error {
 }
 
 var (
-	_ rpc.Module = Service{}
-	_ ui.UI      = Proxy{}
+	_ transport.Module = Service{}
+	_ ui.UI            = Proxy{}
 )

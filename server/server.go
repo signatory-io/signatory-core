@@ -1,21 +1,23 @@
-package rpc
+package server
 
 import (
 	"context"
 	"sync"
 
-	"github.com/signatory-io/signatory-core/rpc/conn"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
+	"github.com/signatory-io/signatory-core/transport"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/conn"
+	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
-type Server[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C], L conn.Listener[T]] struct {
-	Handler  *Handler
+type Server[E protocol.Layout[C, M], C codec.Codec, M protocol.Message[C], T conn.EncodedConn[C, protocol.RPC[C, M], M], L conn.Listener[T]] struct {
+	Handler  *transport.Handler
 	cancel   chan<- struct{}
 	done     <-chan struct{}
 	listener L
 }
 
-func NewServer[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C], L conn.Listener[T]](h *Handler) *Server[E, C, M, T, L] {
+func NewServer[E protocol.Layout[C, M], M protocol.Message[C], C codec.Codec, T conn.EncodedConn[C, protocol.RPC[C, M], M], L conn.Listener[T]](h *transport.Handler) *Server[E, C, M, T, L] {
 	return &Server[E, C, M, T, L]{
 		Handler: h,
 	}
@@ -34,7 +36,7 @@ func (s *Server[E, C, M, T, L]) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (s *Server[E, C, M, T, L]) Serve(l L) (err error) {
+func (s *Server[E, C, M, T, L]) ServeRPC(l L) (err error) {
 	cancel := make(chan struct{})
 	done := make(chan struct{})
 
@@ -50,7 +52,7 @@ func (s *Server[E, C, M, T, L]) Serve(l L) (err error) {
 		}
 		wg.Add(1)
 		go func() {
-			rpc := New[E](conn, s.Handler)
+			rpc := transport.New[E, C, M, T, protocol.RPC[C, M]](conn, s.Handler)
 			select {
 			case <-rpc.Done():
 			case <-cancel:

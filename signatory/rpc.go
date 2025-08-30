@@ -6,9 +6,9 @@ import (
 
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/cose"
-	"github.com/signatory-io/signatory-core/rpc"
-	uirpc "github.com/signatory-io/signatory-core/rpc/ui"
 	"github.com/signatory-io/signatory-core/signer"
+	"github.com/signatory-io/signatory-core/transport"
+	uirpc "github.com/signatory-io/signatory-core/transport/ui"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 )
@@ -22,7 +22,7 @@ type Service struct {
 	Signatory *signer.Signer
 }
 
-func (s *Service) RegisterSelf(h *rpc.Handler) {
+func (s *Service) RegisterSelf(h *transport.Handler) {
 	h.RegisterModule("sig", s)
 }
 
@@ -63,7 +63,7 @@ func (s *Service) ListVaults() (infos []VaultInfo, err error) {
 }
 
 func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
-	c := rpc.GetContext(ctx)
+	c := transport.GetContext(ctx)
 	secretManager := ui.InteractiveSecretManager{
 		UI: uirpc.Proxy{
 			RPC: c.Peer(),
@@ -75,7 +75,7 @@ func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Al
 	}
 	gen, ok := vi.Vault().(vault.Generator)
 	if !ok {
-		return nil, rpc.WrapError(errors.New("key generation is not supported"), signer.ErrFeatureNotSupported)
+		return nil, transport.WrapError(errors.New("key generation is not supported"), signer.ErrFeatureNotSupported)
 	}
 	key, err := gen.Generate(ctx, alg, secretManager, options)
 	if err != nil {
@@ -99,7 +99,7 @@ func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Al
 }
 
 func (s *Service) UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
-	c := rpc.GetContext(ctx)
+	c := transport.GetContext(ctx)
 	secretManager := ui.InteractiveSecretManager{
 		UI: uirpc.Proxy{
 			RPC: c.Peer(),

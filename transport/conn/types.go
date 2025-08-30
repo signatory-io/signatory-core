@@ -4,7 +4,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
+	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
 type Conn interface {
@@ -14,7 +16,7 @@ type Conn interface {
 	Close() error
 }
 
-type EncodedConn[C codec.Codec] interface {
+type EncodedConn[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]] interface {
 	Conn
 	ReadMessage(v any) error
 	WriteMessage(v any) error
@@ -32,4 +34,9 @@ type PacketConn interface {
 	Conn
 	ReadPacket() ([]byte, error)
 	WritePacket(data []byte) error
+}
+
+type AuthenticatedConn interface {
+	SessionID() []byte
+	RemotePublicKey() *ed25519.PublicKey
 }

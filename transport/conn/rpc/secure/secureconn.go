@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/conn"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/conn/rpc"
+	"github.com/signatory-io/signatory-core/transport/encoding/cbor"
+	"github.com/signatory-io/signatory-core/transport/protocol"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -126,7 +128,8 @@ func NewSecureConn(transport net.Conn, localKey *ed25519.PrivateKey, auth Authen
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	rawConn := conn.NewEncodedStreamConn[codec.CBOR](transport)
+	// rawConn := rpc.NewEncodedStreamConn[codec.CBOR, net.TCPConn, protocol.RPC[codec.CBOR, cbor.Message]](transport)
+	rawConn := rpc.NewEncodedStreamConn[codec.CBOR, net.TCPConn, protocol.RPC[codec.CBOR, cbor.Message]](transport)
 
 	var localPub *ed25519.PublicKey
 	if localKey != nil {
@@ -309,18 +312,9 @@ type SecureConn struct {
 func (c *SecureConn) ReadPacket() ([]byte, error)   { return c.readCipher.readPacket(c.conn) }
 func (c *SecureConn) WritePacket(data []byte) error { return c.writeCipher.writePacket(c.conn, data) }
 
-type AuthenticatedConn interface {
-	SessionID() []byte
-	RemotePublicKey() *ed25519.PublicKey
-}
-
 func (c *SecureConn) RemotePublicKey() *ed25519.PublicKey { return c.remotePub }
 func (c *SecureConn) SessionID() []byte                   { return c.sessionID }
 func (c *SecureConn) Close() error                        { return c.conn.Close() }
 func (c *SecureConn) SetDeadline(t time.Time) error       { return c.conn.SetDeadline(t) }
 func (c *SecureConn) LocalAddr() net.Addr                 { return c.conn.LocalAddr() }
 func (c *SecureConn) RemoteAddr() net.Addr                { return c.conn.RemoteAddr() }
-
-var (
-	_ AuthenticatedConn = (*SecureConn)(nil)
-)

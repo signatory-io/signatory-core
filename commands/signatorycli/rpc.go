@@ -11,42 +11,44 @@ import (
 
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/utils"
-	"github.com/signatory-io/signatory-core/rpc"
-	"github.com/signatory-io/signatory-core/rpc/cbor"
-	"github.com/signatory-io/signatory-core/rpc/conn"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
-	"github.com/signatory-io/signatory-core/rpc/conn/secure"
-	signatoryrpc "github.com/signatory-io/signatory-core/rpc/signatory"
-	rpcui "github.com/signatory-io/signatory-core/rpc/ui"
+	signatoryrpc "github.com/signatory-io/signatory-core/signatory"
+	"github.com/signatory-io/signatory-core/transport"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/conn"
+	"github.com/signatory-io/signatory-core/transport/conn/rpc"
+	"github.com/signatory-io/signatory-core/transport/conn/rpc/secure"
+	"github.com/signatory-io/signatory-core/transport/encoding/cbor"
+	"github.com/signatory-io/signatory-core/transport/protocol"
+	rpcui "github.com/signatory-io/signatory-core/transport/ui"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 	"github.com/spf13/cobra"
 )
 
-func (r *RootContext) NewRPC() (*cbor.RPC, error) {
+func (r *RootContext) NewRPC() (*transport.API[codec.CBOR], error) {
 	tcpConn, err := net.Dial("tcp", r.Endpoint)
 	if err != nil {
 		return nil, err
 	}
-	var c conn.EncodedConn[codec.CBOR]
+	var c conn.EncodedConn[codec.CBOR, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message]
 	if r.Identity != nil {
 		sc, err := secure.NewSecureConn(tcpConn, r.Identity, nil)
 		if err != nil {
 			return nil, err
 		}
-		c = conn.NewEncodedPacketConn[codec.CBOR](sc)
+		c = rpc.NewEncodedPacketConn[codec.CBOR, *secure.SecureConn, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message](sc)
 	} else {
-		c = conn.NewEncodedStreamConn[codec.CBOR](tcpConn)
+		c = rpc.NewEncodedStreamConn[codec.CBOR, net.TCPConn, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message](tcpConn)
 	}
 
 	var termUI ui.Terminal
 	uiSvc := rpcui.Service{
 		UI: &termUI,
 	}
-	handler := rpc.NewHandler()
+	handler := transport.NewHandler()
 	handler.Register(uiSvc)
 
-	return cbor.NewRPC(c, handler), nil
+	return transport.New[cbor.Layout, codec.CBOR, cbor.Message, conn.EncodedConn[codec.CBOR, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message], protocol.RPC[codec.CBOR, cbor.Message]](c, handler), nil
 }
 
 func NewVaultCommand(conf *RootContextConfig) *cobra.Command {

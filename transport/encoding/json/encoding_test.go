@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/signatory-io/signatory-core/rpc"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
+	"github.com/signatory-io/signatory-core/transport/codec"
+	"github.com/signatory-io/signatory-core/transport/protocol"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNilResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &rpc.Response[codec.JSON]{
+	msg := l.NewResponse(0, &protocol.Response[codec.JSON]{
 		Result: nil,
 	})
 	require.Equal(t, &Message{
@@ -26,7 +26,7 @@ func TestNilResponse(t *testing.T) {
 
 func TestNonNilResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &rpc.Response[codec.JSON]{
+	msg := l.NewResponse(0, &protocol.Response[codec.JSON]{
 		Result: []byte("\"text\""),
 	})
 	require.Equal(t, &Message{
@@ -41,8 +41,8 @@ func TestNonNilResponse(t *testing.T) {
 
 func TestErrResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &rpc.Response[codec.JSON]{
-		Error: &rpc.ErrorResponse[codec.JSON]{Code: 1, Message: "msg"},
+	msg := l.NewResponse(0, &protocol.Response[codec.JSON]{
+		Error: &protocol.ErrorResponse[codec.JSON]{Code: 1, Message: "msg"},
 	})
 	buf, err := json.Marshal(&msg)
 	require.NoError(t, err)
@@ -62,6 +62,17 @@ func TestParseNilResponse(t *testing.T) {
 
 func TestParseInvalidResponse(t *testing.T) {
 	src := []byte("{\"jsonrpc\":\"2.0\",\"id\":0}")
+	var m Message
+	err := json.Unmarshal(src, &m)
+	require.NoError(t, err)
+	require.False(t, m.IsValid())
+
+	res := m.GetResponse()
+	require.Nil(t, res)
+}
+
+func TestParseInvalidRequest(t *testing.T) {
+	src := []byte("{\"jsonrpc\":\"2.0\",\"id\":1, \"method\": \"obj.add\"}")
 	var m Message
 	err := json.Unmarshal(src, &m)
 	require.NoError(t, err)

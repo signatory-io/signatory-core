@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/signatory-io/signatory-core/crypto"
-	"github.com/signatory-io/signatory-core/rpc"
+	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/vault"
 )
 
@@ -105,7 +105,7 @@ func (s *Signer) ListKeys(ctx context.Context, vaultID string, filter []crypto.A
 	if vaultID != "" {
 		v, ok := s.vaultIndex[vaultID]
 		if !ok {
-			return errIter{rpc.WrapError(fmt.Errorf("vault instance %s is not found", vaultID), CodeVaultNotFound)}
+			return errIter{transport.WrapError(fmt.Errorf("vault instance %s is not found", vaultID), CodeVaultNotFound)}
 		}
 		vaults = func(yield func(*vaultInst) bool) { yield(v) }
 	} else {
@@ -163,7 +163,7 @@ func (s *Signer) ListVaults() iter.Seq[VaultInfo] {
 func (s *Signer) GetVault(id string) (VaultInfo, error) {
 	v, ok := s.vaultIndex[id]
 	if !ok {
-		return nil, rpc.WrapError(fmt.Errorf("vault instance %s is not found", id), CodeVaultNotFound)
+		return nil, transport.WrapError(fmt.Errorf("vault instance %s is not found", id), CodeVaultNotFound)
 	}
 	return v, nil
 }
@@ -193,5 +193,5 @@ func (s *Signer) GetKey(ctx context.Context, pkh *crypto.PublicKeyHash) (KeyRefe
 			return nil, err
 		}
 	}
-	return nil, rpc.WrapError(fmt.Errorf("key %v is not found", pkh), CodeKeyNotFound)
+	return nil, transport.WrapError(fmt.Errorf("key %v is not found", pkh), CodeKeyNotFound)
 }

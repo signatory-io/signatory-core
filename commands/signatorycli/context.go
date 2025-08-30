@@ -8,7 +8,7 @@ import (
 
 	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/signatory"
+	"github.com/signatory-io/signatory-core/signatory"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert/yaml"
 )
