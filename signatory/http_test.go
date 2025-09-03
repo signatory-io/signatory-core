@@ -18,8 +18,6 @@ import (
 
 func TestHTTP(t *testing.T) {
 	// Create HTTP server and client connections
-	// server, client := net.Pipe()
-
 	fds, err := unix.Socketpair(unix.AF_LOCAL, unix.SOCK_STREAM, 0)
 	require.NoError(t, err)
 
@@ -56,7 +54,7 @@ func TestHTTP(t *testing.T) {
 		}()
 
 		// Keep server alive during test
-		time.Sleep(5 * time.Hour)
+		time.Sleep(3 * time.Second)
 		require.NoError(t, api.Close())
 	})
 
@@ -68,7 +66,6 @@ func TestHTTP(t *testing.T) {
 
 		// Send raw HTTP request
 		conn := conn1
-		conn.SetReadDeadline(time.Now().Add(2 * time.Hour))
 
 		jsonrpcBody := `{"jsonrpc":"2.0","id":1,"method":"obj_add","params":[1,2]}`
 		httpRequest := "POST /obj/add HTTP/1.1\r\n" +
@@ -83,6 +80,7 @@ func TestHTTP(t *testing.T) {
 		require.NoError(t, err)
 
 		// Read response with timeout
+		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		buf := make([]byte, 1024)
 		n, err := conn.Read(buf)
 		if err != nil {
