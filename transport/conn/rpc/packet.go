@@ -6,28 +6,27 @@ import (
 
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
-type EncodedPacketConn[C codec.Codec, T conn.PacketConn, P protocol.Protocol[C, M], M protocol.Message[C]] struct {
+type EncodedPacketConn[C codec.Codec, T conn.PacketConn] struct {
 	conn T
 }
 
-func NewEncodedPacketConn[C codec.Codec, T conn.PacketConn, P protocol.Protocol[C, M], M protocol.Message[C]](conn T) *EncodedPacketConn[C, T, P, M] {
-	return &EncodedPacketConn[C, T, P, M]{conn: conn}
+func NewEncodedPacketConn[C codec.Codec, T conn.PacketConn](conn T) *EncodedPacketConn[C, T] {
+	return &EncodedPacketConn[C, T]{conn: conn}
 }
 
-func (c *EncodedPacketConn[C, T, P, M]) SetDeadline(t time.Time) error { return c.conn.SetDeadline(t) }
-func (c *EncodedPacketConn[C, T, P, M]) LocalAddr() net.Addr           { return c.conn.LocalAddr() }
-func (c *EncodedPacketConn[C, T, P, M]) RemoteAddr() net.Addr          { return c.conn.RemoteAddr() }
-func (c *EncodedPacketConn[C, T, P, M]) Close() error                  { return c.conn.Close() }
-func (c *EncodedPacketConn[C, T, P, M]) Inner() conn.Conn              { return c.conn }
-func (c *EncodedPacketConn[C, T, P, M]) Codec() C {
+func (c *EncodedPacketConn[C, T]) SetDeadline(t time.Time) error { return c.conn.SetDeadline(t) }
+func (c *EncodedPacketConn[C, T]) LocalAddr() net.Addr           { return c.conn.LocalAddr() }
+func (c *EncodedPacketConn[C, T]) RemoteAddr() net.Addr          { return c.conn.RemoteAddr() }
+func (c *EncodedPacketConn[C, T]) Close() error                  { return c.conn.Close() }
+func (c *EncodedPacketConn[C, T]) Inner() conn.Conn              { return c.conn }
+func (c *EncodedPacketConn[C, T]) Codec() C {
 	var codec C
 	return codec
 }
 
-func (c *EncodedPacketConn[C, T, P, M]) ReadMessage(v *M) error {
+func (c *EncodedPacketConn[C, T]) ReadMessage(v any) error {
 	packet, err := c.conn.ReadPacket()
 	if err != nil {
 		return err
@@ -36,7 +35,7 @@ func (c *EncodedPacketConn[C, T, P, M]) ReadMessage(v *M) error {
 	return codec.Unmarshal(packet, v)
 }
 
-func (c *EncodedPacketConn[C, T, P, M]) WriteMessage(v *M) error {
+func (c *EncodedPacketConn[C, T]) WriteMessage(v any) error {
 	var codec C
 	buf, err := codec.Marshal(v)
 	if err != nil {
@@ -45,21 +44,21 @@ func (c *EncodedPacketConn[C, T, P, M]) WriteMessage(v *M) error {
 	return c.conn.WritePacket(buf)
 }
 
-type EncodedPacketListener[C codec.Codec, L conn.Listener[T], T conn.PacketConn, P protocol.Protocol[C, M], M protocol.Message[C]] struct {
+type EncodedPacketListener[C codec.Codec, L conn.Listener[T], T conn.PacketConn] struct {
 	listener L
 }
 
-func NewEncodedPacketListener[C codec.Codec, L conn.Listener[T], T conn.PacketConn, P protocol.Protocol[C, M], M protocol.Message[C]](l L) EncodedPacketListener[C, L, T, P, M] {
-	return EncodedPacketListener[C, L, T, P, M]{listener: l}
+func NewEncodedPacketListener[C codec.Codec, L conn.Listener[T], T conn.PacketConn](l L) EncodedPacketListener[C, L, T] {
+	return EncodedPacketListener[C, L, T]{listener: l}
 }
 
-func (s *EncodedPacketListener[C, L, T, P, M]) Accept() (*EncodedPacketConn[C, T, P, M], error) {
+func (s *EncodedPacketListener[C, L, T]) Accept() (*EncodedPacketConn[C, T], error) {
 	conn, err := s.listener.Accept()
 	if err != nil {
 		return nil, err
 	}
-	return NewEncodedPacketConn[C, T, P, M](conn), nil
+	return NewEncodedPacketConn[C, T](conn), nil
 }
 
-func (s *EncodedPacketListener[C, L, T, P, M]) Addr() net.Addr { return s.listener.Addr() }
-func (s *EncodedPacketListener[C, L, T, P, M]) Close() error   { return s.listener.Close() }
+func (s *EncodedPacketListener[C, L, T]) Addr() net.Addr { return s.listener.Addr() }
+func (s *EncodedPacketListener[C, L, T]) Close() error   { return s.listener.Close() }

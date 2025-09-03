@@ -18,7 +18,6 @@ import (
 	"github.com/signatory-io/signatory-core/transport/conn/rpc"
 	"github.com/signatory-io/signatory-core/transport/conn/rpc/secure"
 	"github.com/signatory-io/signatory-core/transport/encoding/cbor"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 	rpcui "github.com/signatory-io/signatory-core/transport/ui"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
@@ -30,15 +29,15 @@ func (r *RootContext) NewRPC() (*transport.API[codec.CBOR], error) {
 	if err != nil {
 		return nil, err
 	}
-	var c conn.EncodedConn[codec.CBOR, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message]
+	var c conn.EncodedConn[codec.CBOR]
 	if r.Identity != nil {
 		sc, err := secure.NewSecureConn(tcpConn, r.Identity, nil)
 		if err != nil {
 			return nil, err
 		}
-		c = rpc.NewEncodedPacketConn[codec.CBOR, *secure.SecureConn, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message](sc)
+		c = rpc.NewEncodedPacketConn[codec.CBOR](sc)
 	} else {
-		c = rpc.NewEncodedStreamConn[codec.CBOR, net.TCPConn, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message](tcpConn)
+		c = rpc.NewEncodedStreamConn[codec.CBOR](tcpConn)
 	}
 
 	var termUI ui.Terminal
@@ -48,7 +47,7 @@ func (r *RootContext) NewRPC() (*transport.API[codec.CBOR], error) {
 	handler := transport.NewHandler()
 	handler.Register(uiSvc)
 
-	return transport.New[cbor.Layout, codec.CBOR, cbor.Message, conn.EncodedConn[codec.CBOR, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message], protocol.RPC[codec.CBOR, cbor.Message]](c, handler), nil
+	return transport.New[cbor.Layout](c, handler), nil
 }
 
 func NewVaultCommand(conf *RootContextConfig) *cobra.Command {

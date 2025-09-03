@@ -12,7 +12,7 @@ import (
 	"github.com/signatory-io/signatory-core/transport/conn/rpc"
 	"github.com/signatory-io/signatory-core/transport/conn/rpc/secure"
 	"github.com/signatory-io/signatory-core/transport/encoding/cbor"
-	"github.com/signatory-io/signatory-core/transport/protocol"
+	"github.com/signatory-io/signatory-core/transport/utils"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
@@ -52,9 +52,8 @@ func TestRPC(t *testing.T) {
 		sc, err := secure.NewSecureConn(conn0, k0, nil)
 		require.NoError(t, err)
 
-		// ec := rpc.NewEncodedPacketConn[codec.CBOR](sc)
-		ec := rpc.NewEncodedPacketConn[codec.CBOR, *secure.SecureConn, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message](sc)
-		rpc := cbor.NewAPI(ec, &h)
+		ec := rpc.NewEncodedPacketConn[codec.CBOR](sc)
+		rpc := utils.NewRPC[cbor.Layout](ec, &h)
 
 		var res int
 		require.NoError(t, rpc.Call(context.Background(), &res, "obj", "add", int(1), int(2)))
@@ -77,21 +76,20 @@ func TestRPC(t *testing.T) {
 		sc, err := secure.NewSecureConn(conn1, k1, nil)
 		require.NoError(t, err)
 
-		ec := rpc.NewEncodedPacketConn[codec.CBOR, *secure.SecureConn, protocol.RPC[codec.CBOR, cbor.Message], cbor.Message](sc)
-		rpc := cbor.NewAPI(ec, &h)
-		require.NotNil(t, rpc)
+		ec := rpc.NewEncodedPacketConn[codec.CBOR](sc)
+		rpc := utils.NewRPC[cbor.Layout](ec, &h)
 
-		// var res int
-		// require.NoError(t, rpc.Call(context.Background(), &res, "obj", "add", int(1), int(2)))
-		// require.Equal(t, int(3), res)
+		var res int
+		require.NoError(t, rpc.Call(context.Background(), &res, "obj", "add", int(1), int(2)))
+		require.Equal(t, int(3), res)
 
-		// var res2 struct {
-		// 	_   struct{} `cbor:",toarray"`
-		// 	Int int
-		// 	Pub *ed25519.PublicKey
-		// }
-		// require.NoError(t, rpc.Call(context.Background(), &res2, "obj", "with_ctx", int(1), int(2)))
-		// require.Equal(t, int(3), res2.Int)
-		// require.Equal(t, k1.Public().(*ed25519.PublicKey), res2.Pub)
+		var res2 struct {
+			_   struct{} `cbor:",toarray"`
+			Int int
+			Pub *ed25519.PublicKey
+		}
+		require.NoError(t, rpc.Call(context.Background(), &res2, "obj", "with_ctx", int(1), int(2)))
+		require.Equal(t, int(3), res2.Int)
+		require.Equal(t, k1.Public().(*ed25519.PublicKey), res2.Pub)
 	})
 }

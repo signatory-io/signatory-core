@@ -15,12 +15,13 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
-	"github.com/signatory-io/signatory-core/transport/conn/rpc/secure"
 	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
 var aLongTimeAgo = time.Unix(1, 0)
 var ErrCanceled = errors.New("canceled")
+
+type authenticatedConn = conn.AuthenticatedConn
 
 type Method struct {
 	fn reflect.Value
@@ -203,17 +204,20 @@ type apiCall[C codec.Codec] struct {
 	err chan<- error
 }
 
-type apiCtx[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]] struct {
-	conn.EncodedConn[C, P, M]
+type apiCtx[C codec.Codec] struct {
+	conn.EncodedConn[C]
 	api *API[C]
 }
 
-func (c *apiCtx[C, P, M]) Peer() Caller { return c.api }
+func (c *apiCtx[C]) Peer() Caller { return c.api }
 
-type apiAuthCtx[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]] struct {
-	*apiCtx[C, P, M]
-	conn.AuthenticatedConn
+type apiAuthCtx[C codec.Codec] struct {
+	*apiCtx[C]
+	auth authenticatedConn
 }
+
+func (c *apiAuthCtx[C]) SessionID() []byte                   { return c.auth.SessionID() }
+func (c *apiAuthCtx[C]) RemotePublicKey() *ed25519.PublicKey { return c.auth.RemotePublicKey() }
 
 type API[C codec.Codec] struct {
 	calls  chan<- apiCall[C]
@@ -280,16 +284,16 @@ func GetContext(ctx context.Context) Context {
 	return ctx.Value(apiCtxKey{}).(Context)
 }
 
-func mkCallCtx[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]](ctx context.Context, conn conn.EncodedConn[C, P, M], api *API[C]) context.Context {
-	c := &apiCtx[C, P, M]{
+func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], api *API[C]) context.Context {
+	c := &apiCtx[C]{
 		EncodedConn: conn,
 		api:         api,
 	}
 	var val any
-	if auth, ok := conn.Inner().(secure.AuthenticatedConn); ok {
-		val = &apiAuthCtx[C, P, M]{
-			apiCtx:            c,
-			AuthenticatedConn: auth,
+	if auth, ok := conn.Inner().(authenticatedConn); ok {
+		val = &apiAuthCtx[C]{
+			apiCtx: c,
+			auth:   auth,
 		}
 	} else {
 		val = c
@@ -297,7 +301,7 @@ func mkCallCtx[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]](
 	return context.WithValue(ctx, apiCtxKey{}, val)
 }
 
-func New[E protocol.Layout[C, M], C codec.Codec, M protocol.Message[C], T conn.EncodedConn[C, P, M], P protocol.Protocol[C, M]](conn T, h *Handler) *API[C] {
+func New[E protocol.Layout[C, M], M protocol.Message[C], C codec.Codec, T conn.EncodedConn[C]](conn T, h *Handler) *API[C] {
 
 	in := make(chan M)
 	readErrCh := make(chan error)
@@ -309,6 +313,7 @@ func New[E protocol.Layout[C, M], C codec.Codec, M protocol.Message[C], T conn.E
 	go func() {
 		for {
 			var m M
+			fmt.Println("Message type: ", reflect.TypeOf(m))
 			if err := conn.ReadMessage(&m); err == nil {
 				in <- m
 			} else {
@@ -373,7 +378,7 @@ func New[E protocol.Layout[C, M], C codec.Codec, M protocol.Message[C], T conn.E
 						handlersWG.Add(1)
 						go func() {
 							id := m.GetID()
-							ctx := mkCallCtx[C, P](handlersCtx, conn, api)
+							ctx := mkCallCtx(handlersCtx, conn, api)
 							res, err := HandleCall[C](h, ctx, req)
 							if err == nil {
 								// all errors except ErrCanceled are returned back

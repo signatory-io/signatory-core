@@ -2,6 +2,7 @@ package http
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -9,28 +10,27 @@ import (
 
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
-type EncodedPacketConn[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]] struct {
+type EncodedHttpConn[C codec.Codec] struct {
 	conn net.Conn
 }
 
-func NewEncodedPacketConn[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]](conn net.Conn) *EncodedPacketConn[C, P, M] {
-	return &EncodedPacketConn[C, P, M]{conn: conn}
+func NewEncodedHttpConn[C codec.Codec](conn net.Conn) *EncodedHttpConn[C] {
+	return &EncodedHttpConn[C]{conn: conn}
 }
 
-func (c *EncodedPacketConn[C, P, M]) SetDeadline(t time.Time) error { return c.conn.SetDeadline(t) }
-func (c *EncodedPacketConn[C, P, M]) LocalAddr() net.Addr           { return c.conn.LocalAddr() }
-func (c *EncodedPacketConn[C, P, M]) RemoteAddr() net.Addr          { return c.conn.RemoteAddr() }
-func (c *EncodedPacketConn[C, P, M]) Close() error                  { return c.conn.Close() }
-func (c *EncodedPacketConn[C, P, M]) Inner() conn.Conn              { return c.conn }
-func (c *EncodedPacketConn[C, P, M]) Codec() C {
+func (c *EncodedHttpConn[C]) SetDeadline(t time.Time) error { return c.conn.SetDeadline(t) }
+func (c *EncodedHttpConn[C]) LocalAddr() net.Addr           { return c.conn.LocalAddr() }
+func (c *EncodedHttpConn[C]) RemoteAddr() net.Addr          { return c.conn.RemoteAddr() }
+func (c *EncodedHttpConn[C]) Close() error                  { return c.conn.Close() }
+func (c *EncodedHttpConn[C]) Inner() conn.Conn              { return c.conn }
+func (c *EncodedHttpConn[C]) Codec() C {
 	var codec C
 	return codec
 }
 
-func (c *EncodedPacketConn[C, P, M]) ReadMessage(v *M) error {
+func (c *EncodedHttpConn[C]) ReadMessage(v any) error {
 	bufReader := bufio.NewReader(c.conn)
 	req, err := http.ReadRequest(bufReader)
 	if err != nil {
@@ -44,10 +44,21 @@ func (c *EncodedPacketConn[C, P, M]) ReadMessage(v *M) error {
 	return codec.Unmarshal(packet, v)
 }
 
-func (c *EncodedPacketConn[C, P, M]) WriteMessage(v *M) error {
+func (c *EncodedHttpConn[C]) WriteMessage(v any) error {
 	var codec C
 	buf, err := codec.Marshal(v)
 	if err != nil {
+		return err
+	}
+
+	// Write HTTP response headers
+	response := fmt.Sprintf("HTTP/1.1 200 OK\r\n"+
+		"Content-Type: application/json\r\n"+
+		"Content-Length: %d\r\n"+
+		"\r\n", len(buf))
+
+	// Write headers first, then body
+	if _, err = c.conn.Write([]byte(response)); err != nil {
 		return err
 	}
 	_, err = c.conn.Write(buf)

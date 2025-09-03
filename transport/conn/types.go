@@ -1,12 +1,12 @@
 package conn
 
 import (
+	"io"
 	"net"
 	"time"
 
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/transport/codec"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
 type Conn interface {
@@ -16,7 +16,13 @@ type Conn interface {
 	Close() error
 }
 
-type EncodedConn[C codec.Codec, P protocol.Protocol[C, M], M protocol.Message[C]] interface {
+type StreamConn interface {
+	Conn
+	io.Reader
+	io.Writer
+}
+
+type EncodedConn[C codec.Codec] interface {
 	Conn
 	ReadMessage(v any) error
 	WriteMessage(v any) error

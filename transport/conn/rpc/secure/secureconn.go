@@ -15,8 +15,6 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn/rpc"
-	"github.com/signatory-io/signatory-core/transport/encoding/cbor"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -128,8 +126,7 @@ func NewSecureConn(transport net.Conn, localKey *ed25519.PrivateKey, auth Authen
 	if err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)
 	}
-	// rawConn := rpc.NewEncodedStreamConn[codec.CBOR, net.TCPConn, protocol.RPC[codec.CBOR, cbor.Message]](transport)
-	rawConn := rpc.NewEncodedStreamConn[codec.CBOR, net.TCPConn, protocol.RPC[codec.CBOR, cbor.Message]](transport)
+	rawConn := rpc.NewEncodedStreamConn[codec.CBOR](transport)
 
 	var localPub *ed25519.PublicKey
 	if localKey != nil {
