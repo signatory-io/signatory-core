@@ -2,8 +2,8 @@ package cbor
 
 import (
 	"github.com/fxamacker/cbor/v2"
+	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/transport/codec"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
 type Message struct {
@@ -19,7 +19,7 @@ func (m Message) IsValid() bool {
 
 func (m Message) GetID() uint64 { return m.ID }
 
-func (m Message) GetRequest() *protocol.Request {
+func (m Message) GetRequest() *transport.Request {
 	if q := m.Request; q != nil {
 		var params [][]byte
 		if len(q.Parameters) != 0 {
@@ -28,7 +28,7 @@ func (m Message) GetRequest() *protocol.Request {
 				params[i] = []byte(p)
 			}
 		}
-		return &protocol.Request{
+		return &transport.Request{
 			Path:       q.Path,
 			Method:     q.Method,
 			Parameters: params,
@@ -37,18 +37,18 @@ func (m Message) GetRequest() *protocol.Request {
 	return nil
 }
 
-func (m Message) GetResponse() *protocol.Response[codec.CBOR] {
+func (m Message) GetResponse() *transport.Response[codec.CBOR] {
 	if r := m.Response; r != nil {
 		if e := r.Error; e != nil {
-			return &protocol.Response[codec.CBOR]{
-				Error: &protocol.ErrorResponse[codec.CBOR]{
+			return &transport.Response[codec.CBOR]{
+				Error: &transport.ErrorResponse[codec.CBOR]{
 					Code:    e.Code,
 					Message: e.Message,
 					Content: []byte(e.Content),
 				},
 			}
 		} else {
-			return &protocol.Response[codec.CBOR]{
+			return &transport.Response[codec.CBOR]{
 				Result: []byte(r.Result),
 			}
 		}
@@ -75,7 +75,7 @@ type Error struct {
 
 type Layout struct{}
 
-func (Layout) NewRequest(id uint64, r *protocol.Request) Message {
+func (Layout) NewRequest(id uint64, r *transport.Request) Message {
 	var par []cbor.RawMessage
 	if len(r.Parameters) != 0 {
 		par = make([]cbor.RawMessage, len(r.Parameters))
@@ -93,7 +93,7 @@ func (Layout) NewRequest(id uint64, r *protocol.Request) Message {
 	}
 }
 
-func (Layout) NewResponse(id uint64, res *protocol.Response[codec.CBOR]) Message {
+func (Layout) NewResponse(id uint64, res *transport.Response[codec.CBOR]) Message {
 	var r Response
 	if e := res.Error; e != nil {
 		r.Error = &Error{

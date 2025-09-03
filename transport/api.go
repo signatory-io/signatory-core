@@ -15,7 +15,6 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
 var aLongTimeAgo = time.Unix(1, 0)
@@ -27,8 +26,8 @@ type Method struct {
 	fn reflect.Value
 }
 
-func mkErrorResponse[C codec.Codec](err error, code int) *protocol.Response[C] {
-	ret := &protocol.ErrorResponse[C]{
+func mkErrorResponse[C codec.Codec](err error, code int) *Response[C] {
+	ret := &ErrorResponse[C]{
 		Message: err.Error(),
 	}
 	var cod C
@@ -45,7 +44,7 @@ func mkErrorResponse[C codec.Codec](err error, code int) *protocol.Response[C] {
 	if ret.Code == 0 {
 		ret.Code = CodeDefault
 	}
-	return &protocol.Response[C]{Error: ret}
+	return &Response[C]{Error: ret}
 }
 
 type Context interface {
@@ -65,7 +64,7 @@ type Caller interface {
 }
 
 // error is returned only in case of the context cancellation
-func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*protocol.Response[C], error) {
+func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*Response[C], error) {
 	t := m.fn.Type()
 	idx := 0
 	ins := make([]reflect.Value, t.NumIn())
@@ -112,7 +111,7 @@ func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*
 			panic(err)
 		}
 	}
-	return &protocol.Response[C]{Result: result}, nil
+	return &Response[C]{Result: result}, nil
 }
 
 var (
@@ -185,7 +184,7 @@ type Module interface {
 	RegisterSelf(h *Handler)
 }
 
-func HandleCall[C codec.Codec](h *Handler, ctx context.Context, req *protocol.Request) (*protocol.Response[C], error) {
+func HandleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
 	p := strings.Join(req.Path, "/")
 	table, ok := h.Modules[p]
 	if !ok {
@@ -199,8 +198,8 @@ func HandleCall[C codec.Codec](h *Handler, ctx context.Context, req *protocol.Re
 }
 
 type apiCall[C codec.Codec] struct {
-	req *protocol.Request
-	res chan<- *protocol.Response[C]
+	req *Request
+	res chan<- *Response[C]
 	err chan<- error
 }
 
@@ -237,13 +236,13 @@ func (r *API[C]) Call(ctx context.Context, result any, objPath, method string, a
 			return err
 		}
 	}
-	req := protocol.Request{
+	req := Request{
 		Path:       strings.Split(objPath, "/"),
 		Method:     method,
 		Parameters: params,
 	}
 
-	resCh := make(chan *protocol.Response[C], 1)
+	resCh := make(chan *Response[C], 1)
 	errCh := make(chan error)
 	call := apiCall[C]{
 		req: &req,
@@ -255,7 +254,7 @@ func (r *API[C]) Call(ctx context.Context, result any, objPath, method string, a
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	var res *protocol.Response[C]
+	var res *Response[C]
 	select {
 	case res = <-resCh:
 	case err = <-errCh:
@@ -301,7 +300,7 @@ func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], api
 	return context.WithValue(ctx, apiCtxKey{}, val)
 }
 
-func New[E protocol.Layout[C, M], M protocol.Message[C], C codec.Codec, T conn.EncodedConn[C]](conn T, h *Handler) *API[C] {
+func New[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C]](conn T, h *Handler) *API[C] {
 
 	in := make(chan M)
 	readErrCh := make(chan error)

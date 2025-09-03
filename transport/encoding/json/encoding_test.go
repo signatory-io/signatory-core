@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/transport/codec"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNilResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &protocol.Response[codec.JSON]{
+	msg := l.NewResponse(0, &transport.Response[codec.JSON]{
 		Result: nil,
 	})
 	require.Equal(t, &Message{
@@ -26,7 +26,7 @@ func TestNilResponse(t *testing.T) {
 
 func TestNonNilResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &protocol.Response[codec.JSON]{
+	msg := l.NewResponse(0, &transport.Response[codec.JSON]{
 		Result: []byte("\"text\""),
 	})
 	require.Equal(t, &Message{
@@ -41,8 +41,8 @@ func TestNonNilResponse(t *testing.T) {
 
 func TestErrResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &protocol.Response[codec.JSON]{
-		Error: &protocol.ErrorResponse[codec.JSON]{Code: 1, Message: "msg"},
+	msg := l.NewResponse(0, &transport.Response[codec.JSON]{
+		Error: &transport.ErrorResponse[codec.JSON]{Code: 1, Message: "msg"},
 	})
 	buf, err := json.Marshal(&msg)
 	require.NoError(t, err)

@@ -7,17 +7,16 @@ import (
 	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
-	"github.com/signatory-io/signatory-core/transport/protocol"
 )
 
-type Server[E protocol.Layout[C, M], M protocol.Message[C], C codec.Codec, T conn.EncodedConn[C], L conn.Listener[T]] struct {
+type Server[E transport.Layout[C, M], M transport.Message[C], C codec.Codec, T conn.EncodedConn[C], L conn.Listener[T]] struct {
 	Handler  *transport.Handler
 	cancel   chan<- struct{}
 	done     <-chan struct{}
 	listener L
 }
 
-func NewServer[E protocol.Layout[C, M], M protocol.Message[C], C codec.Codec, T conn.EncodedConn[C], L conn.Listener[T]](h *transport.Handler) *Server[E, M, C, T, L] {
+func NewServer[E transport.Layout[C, M], M transport.Message[C], C codec.Codec, T conn.EncodedConn[C], L conn.Listener[T]](h *transport.Handler) *Server[E, M, C, T, L] {
 	return &Server[E, M, C, T, L]{
 		Handler: h,
 	}

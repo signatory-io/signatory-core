@@ -1,4 +1,4 @@
-package protocol
+package transport
 
 import (
 	"github.com/signatory-io/signatory-core/transport/codec"
