@@ -12,42 +12,43 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/utils"
 	signatoryrpc "github.com/signatory-io/signatory-core/signatory"
-	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
-	"github.com/signatory-io/signatory-core/transport/conn/rpc"
+	rpcconn "github.com/signatory-io/signatory-core/transport/conn/rpc"
 	"github.com/signatory-io/signatory-core/transport/conn/rpc/secure"
 	"github.com/signatory-io/signatory-core/transport/encoding/cbor"
-	rpcui "github.com/signatory-io/signatory-core/transport/ui"
+	"github.com/signatory-io/signatory-core/transport/rpc"
+	rpcui "github.com/signatory-io/signatory-core/transport/rpc/ui"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 	"github.com/spf13/cobra"
 )
 
-func (r *RootContext) NewRPC() (*transport.API[codec.CBOR], error) {
+func (r *RootContext) NewRPC() (*rpc.API[cbor.Layout, cbor.Message, cbor.Request, cbor.Response, codec.CBOR], error) {
 	tcpConn, err := net.Dial("tcp", r.Endpoint)
 	if err != nil {
 		return nil, err
 	}
-	var c conn.EncodedConn[codec.CBOR]
+	var c conn.EncodedConn[cbor.Message, cbor.Request, cbor.Response, codec.CBOR]
 	if r.Identity != nil {
 		sc, err := secure.NewSecureConn(tcpConn, r.Identity, nil)
 		if err != nil {
 			return nil, err
 		}
-		c = rpc.NewEncodedPacketConn[codec.CBOR](sc)
-	} else {
-		c = rpc.NewEncodedStreamConn[codec.CBOR](tcpConn)
+		c = rpcconn.NewEncodedPacketConn[cbor.Message](sc)
 	}
+	// else {
+	// 	c = rpcconn.NewEncodedStreamConn[codec.CBOR](tcpConn)
+	// }
 
 	var termUI ui.Terminal
 	uiSvc := rpcui.Service{
 		UI: &termUI,
 	}
-	handler := transport.NewHandler()
+	handler := rpc.NewHandler()
 	handler.Register(uiSvc)
 
-	return transport.New[cbor.Layout](c, handler), nil
+	return rpc.New[cbor.Layout](c, handler), nil
 }
 
 func NewVaultCommand(conf *RootContextConfig) *cobra.Command {

@@ -8,7 +8,8 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/cose"
 	"github.com/signatory-io/signatory-core/signer"
 	"github.com/signatory-io/signatory-core/transport"
-	uirpc "github.com/signatory-io/signatory-core/transport/ui"
+	"github.com/signatory-io/signatory-core/transport/rpc"
+	uirpc "github.com/signatory-io/signatory-core/transport/rpc/ui"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 )
@@ -22,7 +23,7 @@ type Service struct {
 	Signatory *signer.Signer
 }
 
-func (s *Service) RegisterSelf(h *transport.Handler) {
+func (s *Service) RegisterSelf(h *rpc.Handler) {
 	h.RegisterModule("sig", s)
 }
 
@@ -63,7 +64,7 @@ func (s *Service) ListVaults() (infos []VaultInfo, err error) {
 }
 
 func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
-	c := transport.GetContext(ctx)
+	c := rpc.GetContext(ctx)
 	secretManager := ui.InteractiveSecretManager{
 		UI: uirpc.Proxy{
 			RPC: c.Peer(),
@@ -99,7 +100,7 @@ func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Al
 }
 
 func (s *Service) UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
-	c := transport.GetContext(ctx)
+	c := rpc.GetContext(ctx)
 	secretManager := ui.InteractiveSecretManager{
 		UI: uirpc.Proxy{
 			RPC: c.Peer(),

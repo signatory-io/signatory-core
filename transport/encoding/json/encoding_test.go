@@ -11,9 +11,10 @@ import (
 
 func TestNilResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &transport.Response[codec.JSON]{
+	var iface transport.Response[codec.JSON] = &Response{
 		Result: nil,
-	})
+	}
+	msg := l.NewMessageFromResponse(0, &iface)
 	require.Equal(t, &Message{
 		ID:      0,
 		Version: "2.0",
@@ -26,9 +27,10 @@ func TestNilResponse(t *testing.T) {
 
 func TestNonNilResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &transport.Response[codec.JSON]{
+	var iface transport.Response[codec.JSON] = &Response{
 		Result: []byte("\"text\""),
-	})
+	}
+	msg := l.NewMessageFromResponse(0, &iface)
 	require.Equal(t, &Message{
 		ID:      0,
 		Version: "2.0",
@@ -41,9 +43,10 @@ func TestNonNilResponse(t *testing.T) {
 
 func TestErrResponse(t *testing.T) {
 	var l Layout
-	msg := l.NewResponse(0, &transport.Response[codec.JSON]{
-		Error: &transport.ErrorResponse[codec.JSON]{Code: 1, Message: "msg"},
-	})
+	var iface transport.Response[codec.JSON] = &Response{
+		Error: &Error{Code: 1, Message: "msg"},
+	}
+	msg := l.NewMessageFromResponse(0, &iface)
 	buf, err := json.Marshal(&msg)
 	require.NoError(t, err)
 	require.Equal(t, []byte("{\"jsonrpc\":\"2.0\",\"id\":0,\"error\":{\"code\":1,\"message\":\"msg\"}}"), buf)
@@ -62,17 +65,6 @@ func TestParseNilResponse(t *testing.T) {
 
 func TestParseInvalidResponse(t *testing.T) {
 	src := []byte("{\"jsonrpc\":\"2.0\",\"id\":0}")
-	var m Message
-	err := json.Unmarshal(src, &m)
-	require.NoError(t, err)
-	require.False(t, m.IsValid())
-
-	res := m.GetResponse()
-	require.Nil(t, res)
-}
-
-func TestParseInvalidRequest(t *testing.T) {
-	src := []byte("{\"jsonrpc\":\"2.0\",\"id\":1, \"method\": \"obj.add\"}")
 	var m Message
 	err := json.Unmarshal(src, &m)
 	require.NoError(t, err)

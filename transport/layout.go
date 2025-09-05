@@ -4,28 +4,30 @@ import (
 	"github.com/signatory-io/signatory-core/transport/codec"
 )
 
-type Layout[C codec.Codec, M Message[C]] interface {
-	NewRequest(id uint64, req *Request) M
-	NewResponse(id uint64, res *Response[C]) M
+type Layout[M Message[Q, S, C], Q Request, S Response[C], C codec.Codec] interface {
+	NewRequest(path string, method string, args ...any) (*Q, error)
+	NewResponse(result []byte) (*S, error)
+	NewErrorResponse(err error, code int) (*S, error)
+	NewMessageFromRequest(id uint64, req *Request) M
+	NewMessageFromResponse(id uint64, res *Response[C]) M
 	Codec() C
 }
 
-type Message[C codec.Codec] interface {
+type Message[Q Request, S Response[C], C codec.Codec] interface {
 	IsValid() bool
 	GetID() uint64
-	GetRequest() *Request
-	GetResponse() *Response[C]
+	GetRequest() *Q
+	GetResponse() *S
 }
 
-type Request struct {
-	Path       []string
-	Method     string
-	Parameters [][]byte
+type Request interface {
+	GetPath() []string
+	GetMethod() string
 }
 
-type Response[C codec.Codec] struct {
-	Result []byte
-	Error  *ErrorResponse[C]
+type Response[C codec.Codec] interface {
+	GetResult() []byte
+	GetError() *ErrorResponse[C]
 }
 
 type ErrorResponse[C codec.Codec] struct {

@@ -1,4 +1,4 @@
-package transport
+package rest
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
 )
@@ -22,29 +23,15 @@ var ErrCanceled = errors.New("canceled")
 
 type authenticatedConn = conn.AuthenticatedConn
 
-type Method struct {
-	fn reflect.Value
+type RESTRequest interface {
+	transport.Request
+	GetHeaders() map[string]string
+	GetQuery() map[string]string
+	GetBody() []byte
 }
 
-func mkErrorResponse[C codec.Codec](err error, code int) *Response[C] {
-	ret := &ErrorResponse[C]{
-		Message: err.Error(),
-	}
-	var cod C
-	if err, ok := err.(Error); ok {
-		ret.Code = err.ErrorCode()
-		if err, ok := err.(errorEx); ok {
-			if content, err := cod.Marshal(err.ErrorContent()); err == nil {
-				ret.Content = content
-			}
-		}
-	} else {
-		ret.Code = code
-	}
-	if ret.Code == 0 {
-		ret.Code = CodeDefault
-	}
-	return &Response[C]{Error: ret}
+type Method struct {
+	fn reflect.Value
 }
 
 type Context interface {
@@ -64,7 +51,8 @@ type Caller interface {
 }
 
 // error is returned only in case of the context cancellation
-func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*Response[C], error) {
+func callMethod[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*S, error) {
+	var enc E
 	t := m.fn.Type()
 	idx := 0
 	ins := make([]reflect.Value, t.NumIn())
@@ -73,13 +61,13 @@ func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*
 		idx += 1
 	}
 	if t.NumIn()-idx != len(args) {
-		return mkErrorResponse[C](errors.New("invalid number of arguments"), CodeInvalidParams), nil
+		return enc.NewErrorResponse(errors.New("invalid number of arguments"), transport.CodeInvalidParams)
 	}
 	var codec C
 	for i, arg := range args {
 		ptr := reflect.New(t.In(i + idx))
 		if err := codec.Unmarshal(arg, ptr.Interface()); err != nil {
-			return mkErrorResponse[C](err, CodeParseError), nil
+			return enc.NewErrorResponse(err, transport.CodeParseError)
 		}
 		ins[i+idx] = ptr.Elem()
 	}
@@ -91,7 +79,7 @@ func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*
 		if cause := context.Cause(ctx); errors.Is(err, ErrCanceled) || errors.Is(err, context.Canceled) && cause == ErrCanceled {
 			return nil, cause
 		}
-		return mkErrorResponse[C](err, 0), nil
+		return enc.NewErrorResponse(err, 0)
 	}
 	var result []byte
 	if len(outs) > 1 {
@@ -111,7 +99,7 @@ func callMethod[C codec.Codec](m *Method, ctx context.Context, args [][]byte) (*
 			panic(err)
 		}
 	}
-	return &Response[C]{Result: result}, nil
+	return enc.NewResponse(result)
 }
 
 var (
@@ -184,68 +172,50 @@ type Module interface {
 	RegisterSelf(h *Handler)
 }
 
-func HandleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
-	p := strings.Join(req.Path, "/")
-	table, ok := h.Modules[p]
-	if !ok {
-		return mkErrorResponse[C](fmt.Errorf("object path `%s' is not found", p), CodeModuleNotFound), nil
-	}
-	m, ok := table[req.Method]
-	if !ok {
-		return mkErrorResponse[C](fmt.Errorf("method `%s' is not found", req.Method), CodeMethodNotFound), nil
-	}
-	return callMethod[C](m, ctx, req.Parameters)
-}
-
-type apiCall[C codec.Codec] struct {
-	req *Request
-	res chan<- *Response[C]
+type apiCall[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec] struct {
+	req *Q
+	res chan<- *S
 	err chan<- error
 }
 
-type apiCtx[C codec.Codec] struct {
-	conn.EncodedConn[C]
-	api *API[C]
+type apiCtx[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec] struct {
+	conn.EncodedConn[M, Q, S, C]
+	api *API[E, M, Q, S, C]
 }
 
-func (c *apiCtx[C]) Peer() Caller { return c.api }
+func (c *apiCtx[E, M, Q, S, C]) Peer() Caller { return c.api }
 
-type apiAuthCtx[C codec.Codec] struct {
-	*apiCtx[C]
+type apiAuthCtx[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec] struct {
+	*apiCtx[E, M, Q, S, C]
 	auth authenticatedConn
 }
 
-func (c *apiAuthCtx[C]) SessionID() []byte                   { return c.auth.SessionID() }
-func (c *apiAuthCtx[C]) RemotePublicKey() *ed25519.PublicKey { return c.auth.RemotePublicKey() }
+func (c *apiAuthCtx[E, M, Q, S, C]) SessionID() []byte { return c.auth.SessionID() }
+func (c *apiAuthCtx[E, M, Q, S, C]) RemotePublicKey() *ed25519.PublicKey {
+	return c.auth.RemotePublicKey()
+}
 
-type API[C codec.Codec] struct {
-	calls  chan<- apiCall[C]
+type API[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec] struct {
+	calls  chan<- apiCall[E, M, Q, S, C]
 	cancel chan<- struct{}
 	done   <-chan struct{}
 	err    error
+	enc    E
 }
 
-func (r *API[C]) Done() <-chan struct{} { return r.done }
-func (r *API[C]) Err() error            { return r.err }
+func (r *API[E, M, Q, S, C]) Done() <-chan struct{} { return r.done }
+func (r *API[E, M, Q, S, C]) Err() error            { return r.err }
 
-func (r *API[C]) Call(ctx context.Context, result any, objPath, method string, args ...any) (err error) {
-	params := make([][]byte, len(args))
-	var codec C
-	for i, arg := range args {
-		if params[i], err = codec.Marshal(arg); err != nil {
-			return err
-		}
-	}
-	req := Request{
-		Path:       strings.Split(objPath, "/"),
-		Method:     method,
-		Parameters: params,
+func (r *API[E, M, Q, S, C]) Call(ctx context.Context, result any, objPath, method string, args ...any) (err error) {
+	req, err := r.enc.NewRequest(objPath, method, args...)
+	if err != nil {
+		return err
 	}
 
-	resCh := make(chan *Response[C], 1)
+	resCh := make(chan *S, 1)
 	errCh := make(chan error)
-	call := apiCall[C]{
-		req: &req,
+	call := apiCall[E, M, Q, S, C]{
+		req: req,
 		res: resCh,
 		err: errCh,
 	}
@@ -254,7 +224,7 @@ func (r *API[C]) Call(ctx context.Context, result any, objPath, method string, a
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	var res *Response[C]
+	var res *S
 	select {
 	case res = <-resCh:
 	case err = <-errCh:
@@ -262,16 +232,16 @@ func (r *API[C]) Call(ctx context.Context, result any, objPath, method string, a
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	if res.Error != nil {
-		return res.Error
+	if (*res).GetError() != nil {
+		return (*res).GetError()
 	}
-	if res.Result != nil && result != nil {
-		return codec.Unmarshal(res.Result, result)
+	if (*res).GetResult() != nil && result != nil {
+		return r.enc.Codec().Unmarshal((*res).GetResult(), result)
 	}
 	return nil
 }
 
-func (r *API[C]) Close() error {
+func (r *API[E, M, Q, S, C]) Close() error {
 	close(r.cancel)
 	<-r.done
 	return r.err
@@ -283,14 +253,14 @@ func GetContext(ctx context.Context) Context {
 	return ctx.Value(apiCtxKey{}).(Context)
 }
 
-func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], api *API[C]) context.Context {
-	c := &apiCtx[C]{
+func mkCallCtx[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec](ctx context.Context, conn conn.EncodedConn[M, Q, S, C], api *API[E, M, Q, S, C]) context.Context {
+	c := &apiCtx[E, M, Q, S, C]{
 		EncodedConn: conn,
 		api:         api,
 	}
 	var val any
 	if auth, ok := conn.Inner().(authenticatedConn); ok {
-		val = &apiAuthCtx[C]{
+		val = &apiAuthCtx[E, M, Q, S, C]{
 			apiCtx: c,
 			auth:   auth,
 		}
@@ -300,7 +270,22 @@ func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], api
 	return context.WithValue(ctx, apiCtxKey{}, val)
 }
 
-func New[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C]](conn T, h *Handler) *API[C] {
+func HandleCall[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q RESTRequest, S transport.Response[C], C codec.Codec](h *Handler, ctx context.Context, req *Q) (*S, error) {
+	var enc E
+	p := strings.Join((*req).GetPath(), "/")
+	table, ok := h.Modules[p]
+	if !ok {
+		return enc.NewErrorResponse(fmt.Errorf("object path `%s' is not found", p), transport.CodeModuleNotFound)
+	}
+	m, ok := table[(*req).GetMethod()]
+	if !ok {
+		return enc.NewErrorResponse(fmt.Errorf("method `%s' is not found", (*req).GetMethod()), transport.CodeMethodNotFound)
+	}
+	return callMethod[E](m, ctx, [][]byte{(*req).GetBody()})
+}
+
+func New[E transport.Layout[M, Q, S, C], T conn.EncodedConn[M, Q, S, C], M transport.Message[Q, S, C], Q RESTRequest, S transport.Response[C], C codec.Codec](conn T, h *Handler) *API[E, M, Q, S, C] {
+	var enc E
 
 	in := make(chan M)
 	readErrCh := make(chan error)
@@ -313,7 +298,7 @@ func New[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C]](con
 		for {
 			var m M
 			fmt.Println("Message type: ", reflect.TypeOf(m))
-			if err := conn.ReadMessage(&m); err == nil {
+			if err := conn.ReadEncodedMessage(&m); err == nil {
 				in <- m
 			} else {
 				if errors.Is(err, os.ErrDeadlineExceeded) {
@@ -330,7 +315,7 @@ func New[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C]](con
 	go func() {
 		var err error
 		for m := range out {
-			if err = conn.WriteMessage(&m); err != nil {
+			if err = conn.WriteEncodedMessage(&m); err != nil {
 				// a bit cleaner than writing to closed connection
 				if errors.Is(err, os.ErrDeadlineExceeded) {
 					err = nil
@@ -341,17 +326,18 @@ func New[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C]](con
 		writeErrCh <- err
 	}()
 
-	calls := make(chan apiCall[C])
+	calls := make(chan apiCall[E, M, Q, S, C])
 	dispatcherCancel := make(chan struct{})
 	done := make(chan struct{})
 
-	api := &API[C]{
+	api := &API[E, M, Q, S, C]{
 		calls:  calls,
 		cancel: dispatcherCancel,
 		done:   done,
+		enc:    enc,
 	}
 
-	awaiting := make(map[uint64]*apiCall[C])
+	awaiting := make(map[uint64]*apiCall[E, M, Q, S, C])
 	msgID := uint64(1) // use 1 in case the ID is not set properly
 	// TODO: timeout for calls
 
@@ -378,11 +364,11 @@ func New[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C]](con
 						go func() {
 							id := m.GetID()
 							ctx := mkCallCtx(handlersCtx, conn, api)
-							res, err := HandleCall[C](h, ctx, req)
+							res, err := HandleCall[E](h, ctx, req)
 							if err == nil {
 								// all errors except ErrCanceled are returned back
-								var enc E
-								responseMsg := enc.NewResponse(id, res)
+								var iface transport.Response[C] = *res
+								responseMsg := enc.NewMessageFromResponse(id, &iface)
 								out <- responseMsg
 							}
 							handlersWG.Done()
@@ -398,8 +384,8 @@ func New[E Layout[C, M], M Message[C], C codec.Codec, T conn.EncodedConn[C]](con
 
 			case c := <-calls:
 				awaiting[msgID] = &c
-				var enc E
-				callMsg := enc.NewRequest(msgID, c.req)
+				var iface transport.Request = *c.req
+				callMsg := enc.NewMessageFromRequest(msgID, &iface)
 				msgID++
 				out <- callMsg
 

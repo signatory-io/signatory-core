@@ -7,10 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/signatory-io/signatory-core/transport"
-	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn/http"
-	"github.com/signatory-io/signatory-core/transport/encoding/json"
+	restenc "github.com/signatory-io/signatory-core/transport/encoding/rest"
+	"github.com/signatory-io/signatory-core/transport/rest"
 	"github.com/signatory-io/signatory-core/transport/utils"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
@@ -29,11 +28,11 @@ func TestHTTP(t *testing.T) {
 	conn1, err := net.FileConn(os.NewFile(uintptr(fds[1]), "socket"))
 	require.NoError(t, err)
 
-	h := transport.Handler{
-		Modules: map[string]transport.MethodTable{
+	h := rest.Handler{
+		Modules: map[string]rest.MethodTable{
 			"obj": {
-				"add":      transport.NewMethod(func(x, y int) (int, error) { return x + y, nil }),
-				"subtract": transport.NewMethod(func(x, y int) (int, error) { return x - y, nil }),
+				"add":      rest.NewMethod(func(x, y int) (int, error) { return x + y, nil }),
+				"subtract": rest.NewMethod(func(x, y int) (int, error) { return x - y, nil }),
 			},
 		},
 	}
@@ -42,10 +41,10 @@ func TestHTTP(t *testing.T) {
 		t.Parallel()
 
 		// Create HTTP connection for server side
-		hc := http.NewEncodedHttpConn[codec.JSON](conn0)
+		hc := http.NewEncodedHttpConn[restenc.Message](conn0)
 
 		// Create REST API
-		api := utils.NewREST[json.Layout](hc, &h)
+		api := utils.NewREST[restenc.Layout](hc, &h)
 		require.NotNil(t, api)
 
 		// Just wait for the test to complete

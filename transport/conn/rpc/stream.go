@@ -4,8 +4,10 @@ import (
 	"net"
 	"time"
 
+	"github.com/signatory-io/signatory-core/transport"
 	"github.com/signatory-io/signatory-core/transport/codec"
 	"github.com/signatory-io/signatory-core/transport/conn"
+	"github.com/signatory-io/signatory-core/transport/rpc"
 )
 
 type EncodedStreamConn[C codec.Codec, T conn.StreamConn] struct {
@@ -31,6 +33,10 @@ func NewEncodedStreamConn[C codec.Codec, T conn.StreamConn](conn T) *EncodedStre
 	}
 }
 
+func (c *EncodedStreamConn[C, T]) ReadMessage(v any) error {
+	return c.dec.Decode(v)
+}
+
 func (c *EncodedStreamConn[C, T]) WriteMessage(v any) error {
 	var codec C
 	buf, err := codec.Marshal(v)
@@ -41,8 +47,12 @@ func (c *EncodedStreamConn[C, T]) WriteMessage(v any) error {
 	return err
 }
 
-func (c *EncodedStreamConn[C, T]) ReadMessage(v any) error {
-	return c.dec.Decode(v)
+func (c *EncodedStreamConn[C, T]) ReadEncodedMessage(m *transport.Message[rpc.RPCRequest, transport.Response[C], C]) error {
+	return c.ReadMessage(m)
+}
+
+func (c *EncodedStreamConn[C, T]) WriteEncodedMessage(m *transport.Message[rpc.RPCRequest, transport.Response[C], C]) error {
+	return c.WriteMessage(m)
 }
 
 type EncodedStreamListener[C codec.Codec, L conn.Listener[T], T conn.StreamConn] struct {
@@ -58,7 +68,7 @@ func (s *EncodedStreamListener[C, L, T]) Accept() (*EncodedStreamConn[C, T], err
 	if err != nil {
 		return nil, err
 	}
-	return NewEncodedStreamConn[C, T](conn), nil
+	return NewEncodedStreamConn[C](conn), nil
 }
 
 func (s *EncodedStreamListener[C, L, T]) Addr() net.Addr { return s.listener.Addr() }

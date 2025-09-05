@@ -33,15 +33,15 @@ type Error interface {
 	ErrorCode() int
 }
 
-type errorEx interface {
+type ErrorEx interface {
 	Error
 	ErrorContent() any
 }
 
-type ErrorEx interface {
-	Error
-	ErrorContent(v any) (ok bool, err error)
-}
+// type ErrorEx interface {
+// 	Error
+// 	ErrorContent(v any) (ok bool, err error)
+// }
 
 type wrappedErr struct {
 	error
