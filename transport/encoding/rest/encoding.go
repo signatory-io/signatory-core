@@ -2,6 +2,8 @@ package rest
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/signatory-io/signatory-core/transport"
@@ -9,18 +11,18 @@ import (
 )
 
 type Request struct {
-	Path    []string          `json:"path,omitempty"`
-	Method  string            `json:"method,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Query   map[string]string `json:"query,omitempty"`
-	Body    json.RawMessage   `json:"body,omitempty"`
+	Path    []string        `json:"path,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Headers http.Header     `json:"headers,omitempty"`
+	Query   url.Values      `json:"query,omitempty"`
+	Body    json.RawMessage `json:"body,omitempty"`
 }
 
-func (r Request) GetPath() []string             { return r.Path }
-func (r Request) GetMethod() string             { return r.Method }
-func (r Request) GetHeaders() map[string]string { return r.Headers }
-func (r Request) GetQuery() map[string]string   { return r.Query }
-func (r Request) GetBody() []byte               { return []byte(r.Body) }
+func (r Request) GetPath() []string       { return r.Path }
+func (r Request) GetMethod() string       { return r.Method }
+func (r Request) GetHeaders() http.Header { return r.Headers }
+func (r Request) GetQuery() url.Values    { return r.Query }
+func (r Request) GetBody() []byte         { return []byte(r.Body) }
 
 type Response struct {
 	Result json.RawMessage `json:"result,omitempty"`
@@ -59,14 +61,14 @@ type Error struct {
 // }
 
 type Message struct {
-	ID      uint64            `json:"id,omitempty"`
-	Path    string            `json:"path,omitempty"`
-	Method  string            `json:"method,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Query   map[string]string `json:"query,omitempty"`
-	Body    json.RawMessage   `json:"body,omitempty"`
-	Result  json.RawMessage   `json:"result,omitempty"`
-	Error   *Error            `json:"error,omitempty"`
+	ID      uint64          `json:"id,omitempty"`
+	Path    string          `json:"path,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Headers http.Header     `json:"headers,omitempty"`
+	Query   url.Values      `json:"query,omitempty"`
+	Body    json.RawMessage `json:"body,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *Error          `json:"error,omitempty"`
 }
 
 func (m Message) IsValid() bool {
@@ -109,12 +111,12 @@ type Layout struct{}
 
 func (Layout) NewRequest(path, method string, args ...any) (*Request, error) {
 	// args are expected to be headers, query and body where body is optional
-	headers := make(map[string]string)
-	query := make(map[string]string)
+	headers := make(http.Header)
+	query := make(url.Values)
 	body := []byte{}
 	if len(args) >= 2 {
-		headers = args[0].(map[string]string)
-		query = args[1].(map[string]string)
+		headers = args[0].(http.Header)
+		query = args[1].(url.Values)
 		if len(args) == 3 {
 			body = args[2].([]byte)
 		}

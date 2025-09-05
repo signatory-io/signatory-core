@@ -10,14 +10,14 @@ import (
 	"github.com/signatory-io/signatory-core/transport/rpc"
 )
 
-type Server[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], C codec.Codec, Q rpc.RPCRequest, S transport.Response[C], T conn.EncodedConn[M, Q, S, C], L conn.Listener[T]] struct {
+type Server[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], C codec.Codec, Q rpc.RPCRequest, S transport.Response[C], T conn.EncodedConn[E, M, Q, S, C], L conn.Listener[T]] struct {
 	Handler  *rpc.Handler
 	cancel   chan<- struct{}
 	done     <-chan struct{}
 	listener L
 }
 
-func NewServer[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], C codec.Codec, Q rpc.RPCRequest, S transport.Response[C], T conn.EncodedConn[M, Q, S, C], L conn.Listener[T]](h *rpc.Handler) *Server[E, M, C, Q, S, T, L] {
+func NewServer[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], C codec.Codec, Q rpc.RPCRequest, S transport.Response[C], T conn.EncodedConn[E, M, Q, S, C], L conn.Listener[T]](h *rpc.Handler) *Server[E, M, C, Q, S, T, L] {
 	return &Server[E, M, C, Q, S, T, L]{
 		Handler: h,
 	}

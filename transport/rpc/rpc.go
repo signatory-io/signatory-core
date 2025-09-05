@@ -177,7 +177,7 @@ type apiCall[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q tra
 }
 
 type apiCtx[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec] struct {
-	conn.EncodedConn[M, Q, S, C]
+	conn.EncodedConn[E, M, Q, S, C]
 	api *API[E, M, Q, S, C]
 }
 
@@ -251,7 +251,7 @@ func GetContext(ctx context.Context) Context {
 	return ctx.Value(apiCtxKey{}).(Context)
 }
 
-func mkCallCtx[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec](ctx context.Context, conn conn.EncodedConn[M, Q, S, C], api *API[E, M, Q, S, C]) context.Context {
+func mkCallCtx[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec](ctx context.Context, conn conn.EncodedConn[E, M, Q, S, C], api *API[E, M, Q, S, C]) context.Context {
 	c := &apiCtx[E, M, Q, S, C]{
 		EncodedConn: conn,
 		api:         api,
@@ -282,7 +282,7 @@ func HandleCall[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q 
 	return callMethod[E](m, ctx, (*req).GetParameters())
 }
 
-func New[E transport.Layout[M, Q, S, C], T conn.EncodedConn[M, Q, S, C], M transport.Message[Q, S, C], Q RPCRequest, S transport.Response[C], C codec.Codec](conn T, h *Handler) *API[E, M, Q, S, C] {
+func New[E transport.Layout[M, Q, S, C], T conn.EncodedConn[E, M, Q, S, C], M transport.Message[Q, S, C], Q RPCRequest, S transport.Response[C], C codec.Codec](conn T, h *Handler) *API[E, M, Q, S, C] {
 	var enc E
 
 	in := make(chan M)

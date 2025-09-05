@@ -41,10 +41,10 @@ func TestHTTP(t *testing.T) {
 		t.Parallel()
 
 		// Create HTTP connection for server side
-		hc := http.NewEncodedHttpConn[restenc.Message](conn0)
+		hc := http.NewEncodedHttpConn[restenc.Layout](conn0)
 
 		// Create REST API
-		api := utils.NewREST[restenc.Layout](hc, &h)
+		api := utils.NewREST(hc, &h)
 		require.NotNil(t, api)
 
 		// Just wait for the test to complete

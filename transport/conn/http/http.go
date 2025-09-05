@@ -14,34 +14,36 @@ import (
 	"github.com/signatory-io/signatory-core/transport/rest"
 )
 
-type EncodedHttpConn[M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, T net.Conn] struct {
+type EncodedHttpConn[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, T net.Conn] struct {
 	conn net.Conn
+	enc  E
 }
 
-func NewEncodedHttpConn[M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, T net.Conn](conn T) *EncodedHttpConn[M, Q, S, C, T] {
-	return &EncodedHttpConn[M, Q, S, C, T]{conn: conn}
+func NewEncodedHttpConn[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, T net.Conn](conn T) *EncodedHttpConn[E, M, Q, S, C, T] {
+	var enc E
+	return &EncodedHttpConn[E, M, Q, S, C, T]{conn: conn, enc: enc}
 }
 
-func (c *EncodedHttpConn[M, Q, S, C, T]) SetDeadline(t time.Time) error { return c.conn.SetDeadline(t) }
-func (c *EncodedHttpConn[M, Q, S, C, T]) LocalAddr() net.Addr           { return c.conn.LocalAddr() }
-func (c *EncodedHttpConn[M, Q, S, C, T]) RemoteAddr() net.Addr          { return c.conn.RemoteAddr() }
-func (c *EncodedHttpConn[M, Q, S, C, T]) Close() error                  { return c.conn.Close() }
-func (c *EncodedHttpConn[M, Q, S, C, T]) Inner() conn.Conn              { return c.conn }
-func (c *EncodedHttpConn[M, Q, S, C, T]) Codec() C {
-	var codec C
-	return codec
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) SetDeadline(t time.Time) error {
+	return c.conn.SetDeadline(t)
+}
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) LocalAddr() net.Addr  { return c.conn.LocalAddr() }
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) RemoteAddr() net.Addr { return c.conn.RemoteAddr() }
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) Close() error         { return c.conn.Close() }
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) Inner() conn.Conn     { return c.conn }
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) Codec() C {
+	return c.enc.Codec()
 }
 
-func (c *EncodedHttpConn[M, Q, S, C, T]) ReadMessage(v any) error {
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) ReadMessage(v any) error {
 	msg, err := io.ReadAll(c.conn)
 	if err != nil {
 		return err
 	}
-	var codec C
-	return codec.Unmarshal(msg, v)
+	return c.enc.Codec().Unmarshal(msg, v)
 }
 
-func (c *EncodedHttpConn[M, Q, S, C, T]) WriteMessage(v any) error {
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) WriteMessage(v any) error {
 	var codec C
 	buf, err := codec.Marshal(v)
 	if err != nil {
@@ -51,21 +53,28 @@ func (c *EncodedHttpConn[M, Q, S, C, T]) WriteMessage(v any) error {
 	return err
 }
 
-func (c *EncodedHttpConn[M, Q, S, C, T]) ReadEncodedMessage(m *M) error {
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) ReadEncodedMessage(m *M) error {
 	bufReader := bufio.NewReader(c.conn)
-	req, err := http.ReadRequest(bufReader)
+	reqHttp, err := http.ReadRequest(bufReader)
 	if err != nil {
 		return err
 	}
-	packet, err := io.ReadAll(req.Body)
+	body, err := io.ReadAll(reqHttp.Body)
 	if err != nil {
 		return err
 	}
-	var codec C
-	return codec.Unmarshal(packet, m)
+
+	req, err := c.enc.NewRequest(
+		reqHttp.URL.Path, reqHttp.Method, reqHttp.Header, reqHttp.URL.Query(), body)
+	if err != nil {
+		return err
+	}
+	var reqInterface transport.Request = *req
+	*m = c.enc.NewMessageFromRequest(0, &reqInterface)
+	return nil
 }
 
-func (c *EncodedHttpConn[M, Q, S, C, T]) WriteEncodedMessage(m *M) error {
+func (c *EncodedHttpConn[E, M, Q, S, C, T]) WriteEncodedMessage(m *M) error {
 	var codec C
 	buf, err := codec.Marshal(m)
 	if err != nil {
@@ -86,21 +95,21 @@ func (c *EncodedHttpConn[M, Q, S, C, T]) WriteEncodedMessage(m *M) error {
 	return err
 }
 
-type EncodedHttpListener[M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, L conn.Listener[T], T net.Conn] struct {
+type EncodedHttpListener[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, L conn.Listener[T], T net.Conn] struct {
 	listener L
 }
 
-func NewEncodedHttpListener[M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, L conn.Listener[T], T net.Conn](l L) EncodedHttpListener[M, Q, S, C, L, T] {
-	return EncodedHttpListener[M, Q, S, C, L, T]{listener: l}
+func NewEncodedHttpListener[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q rest.RESTRequest, S transport.Response[C], C codec.Codec, L conn.Listener[T], T net.Conn](l L) EncodedHttpListener[E, M, Q, S, C, L, T] {
+	return EncodedHttpListener[E, M, Q, S, C, L, T]{listener: l}
 }
 
-func (s *EncodedHttpListener[M, Q, S, C, L, T]) Accept() (*EncodedHttpConn[M, Q, S, C, T], error) {
+func (s *EncodedHttpListener[E, M, Q, S, C, L, T]) Accept() (*EncodedHttpConn[E, M, Q, S, C, T], error) {
 	conn, err := s.listener.Accept()
 	if err != nil {
 		return nil, err
 	}
-	return NewEncodedHttpConn[M](conn), nil
+	return NewEncodedHttpConn[E, M, Q, S, C, T](conn), nil
 }
 
-func (s *EncodedHttpListener[M, Q, S, C, L, T]) Addr() net.Addr { return s.listener.Addr() }
-func (s *EncodedHttpListener[M, Q, S, C, L, T]) Close() error   { return s.listener.Close() }
+func (s *EncodedHttpListener[E, M, Q, S, C, L, T]) Addr() net.Addr { return s.listener.Addr() }
+func (s *EncodedHttpListener[E, M, Q, S, C, L, T]) Close() error   { return s.listener.Close() }

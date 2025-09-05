@@ -23,7 +23,7 @@ type StreamConn interface {
 	io.Writer
 }
 
-type EncodedConn[M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec] interface {
+type EncodedConn[E transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], Q transport.Request, S transport.Response[C], C codec.Codec] interface {
 	Conn
 	ReadMessage(v any) error
 	WriteMessage(v any) error

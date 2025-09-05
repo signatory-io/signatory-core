@@ -29,7 +29,7 @@ func (r *RootContext) NewRPC() (*rpc.API[cbor.Layout, cbor.Message, cbor.Request
 	if err != nil {
 		return nil, err
 	}
-	var c conn.EncodedConn[cbor.Message, cbor.Request, cbor.Response, codec.CBOR]
+	var c conn.EncodedConn[cbor.Layout, cbor.Message, cbor.Request, cbor.Response, codec.CBOR]
 	if r.Identity != nil {
 		sc, err := secure.NewSecureConn(tcpConn, r.Identity, nil)
 		if err != nil {

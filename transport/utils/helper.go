@@ -12,7 +12,7 @@ import (
 	"github.com/signatory-io/signatory-core/transport/rpc"
 )
 
-func NewREST[L transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], C codec.Codec, Q rest.RESTRequest, S transport.Response[C], P net.Conn](conn *httpconn.EncodedHttpConn[M, Q, S, C, P], h *rest.Handler) *rest.API[L, M, Q, S, C] {
+func NewREST[L transport.Layout[M, Q, S, C], M transport.Message[Q, S, C], C codec.Codec, Q rest.RESTRequest, S transport.Response[C], P net.Conn](conn *httpconn.EncodedHttpConn[L, M, Q, S, C, P], h *rest.Handler) *rest.API[L, M, Q, S, C] {
 	return rest.New[L](conn, h)
 }
 
