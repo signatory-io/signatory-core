@@ -244,7 +244,7 @@ func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], rpc
 	return context.WithValue(ctx, rpcCtxKey{}, val)
 }
 
-func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](conn T, h *Handler) *RPC[C] {
+func New[L Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](conn T, h *Handler) *RPC[C] {
 	in := make(chan M)
 	readErrCh := make(chan error)
 
@@ -322,8 +322,8 @@ func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 							res, err := handleCall[C](h, ctx, req)
 							if err == nil {
 								// all errors except ErrCanceled are returned back
-								var enc E
-								responseMsg := enc.NewResponse(id, res)
+								var layout L
+								responseMsg := layout.NewResponse(id, res)
 								out <- responseMsg
 							}
 							handlersWG.Done()
@@ -339,8 +339,8 @@ func New[E Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 
 			case c := <-calls:
 				awaiting[msgID] = &c
-				var enc E
-				callMsg := enc.NewRequest(msgID, c.req)
+				var layout L
+				callMsg := layout.NewRequest(msgID, c.req)
 				msgID++
 				out <- callMsg
 
