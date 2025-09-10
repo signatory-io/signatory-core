@@ -13,6 +13,7 @@ import (
 	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 )
 
+// HTTPHandler implements http.Handler for unidirectional HTTP RPC transport
 type HTTPHandler[L Layout[C, M], C codec.Codec, M Message[C]] struct {
 	h *Handler
 }
@@ -65,10 +66,12 @@ func (h *HTTPHandler[L, C, M]) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	w.Header().Set("Content-Type", codec.MediaType())
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf)
 }
 
+// HTTPHandler is used to make unidirectional RPC calls over HTTP
 type HTTPClient[L Layout[C, M], C codec.Codec, M Message[C]] struct {
 	c     *http.Client
 	url   string
@@ -125,6 +128,8 @@ func (h *HTTPClient[L, C, M]) Call(ctx context.Context, result any, objPath, met
 	if err != nil {
 		return err
 	}
+	httpReq.Header.Set("Accept", codec.MediaType())
+
 	res, err := h.client().Do(httpReq)
 	if err != nil {
 		return err

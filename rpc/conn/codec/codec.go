@@ -12,6 +12,7 @@ type Codec interface {
 	Marshal(v any) ([]byte, error)
 	NewStreamDecoder(r io.Reader) StreamDecoder
 	NewStreamEncoder(w io.Writer) StreamEncoder
+	MediaType() string
 }
 
 type StreamDecoder interface {
@@ -28,6 +29,7 @@ func (CBOR) Unmarshal(data []byte, v any) error         { return cbor.Unmarshal(
 func (CBOR) Marshal(v any) ([]byte, error)              { return cbor.Marshal(v) }
 func (CBOR) NewStreamDecoder(r io.Reader) StreamDecoder { return cbor.NewDecoder(r) }
 func (CBOR) NewStreamEncoder(w io.Writer) StreamEncoder { return cbor.NewEncoder(w) }
+func (CBOR) MediaType() string                          { return "application/cbor" }
 
 type JSON struct{}
 
@@ -35,3 +37,4 @@ func (JSON) Unmarshal(data []byte, v any) error         { return json.Unmarshal(
 func (JSON) Marshal(v any) ([]byte, error)              { return json.Marshal(v) }
 func (JSON) NewStreamDecoder(r io.Reader) StreamDecoder { return json.NewDecoder(r) }
 func (JSON) NewStreamEncoder(w io.Writer) StreamEncoder { return json.NewEncoder(w) }
+func (JSON) MediaType() string                          { return "application/json" }

@@ -205,6 +205,8 @@ type rpcCall[C codec.Codec] struct {
 	err chan<- error
 }
 
+// RPC is a bidirectional RPC dispatcher used to make and receive calls over a various types
+// of network connections. See conn.EncodedConn implementations for details.
 type RPC[C codec.Codec] struct {
 	calls  chan<- rpcCall[C]
 	cancel chan<- struct{}

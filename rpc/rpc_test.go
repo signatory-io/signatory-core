@@ -3,6 +3,7 @@ package rpc_test
 import (
 	"context"
 	"net"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/signatory-io/signatory-core/rpc/conn"
 	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn/secure"
+	"github.com/signatory-io/signatory-core/rpc/json"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
@@ -91,4 +93,22 @@ func TestRPC(t *testing.T) {
 		require.Equal(t, int(3), res2.Int)
 		require.Equal(t, k1.Public().(*ed25519.PublicKey), res2.Pub)
 	})
+}
+
+func TestHTTP(t *testing.T) {
+	h := json.NewHTTPHandler(&rpc.Handler{
+		Modules: map[string]rpc.MethodTable{
+			"obj": {
+				"add": rpc.NewMethod(func(x, y int) (int, error) { return x + y, nil }),
+			},
+		},
+	})
+
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	client := json.NewHTTPClient(srv.URL, srv.Client())
+	var res int
+	require.NoError(t, client.Call(context.Background(), &res, "obj", "add", int(1), int(2)))
+	require.Equal(t, int(3), res)
 }
