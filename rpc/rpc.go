@@ -178,6 +178,8 @@ func (h *Handler) RegisterModule(path string, object any) {
 		}
 		table[cc.String()] = newMethod(v.Method(i))
 	}
+
+	h.RegisterModuleMethodTable(path, table)
 }
 
 func (h *Handler) Register(obj Module) { obj.RegisterSelf(h) }
