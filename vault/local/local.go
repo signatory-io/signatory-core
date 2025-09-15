@@ -15,6 +15,7 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/keygen"
 	"github.com/signatory-io/signatory-core/crypto/utils"
 	"github.com/signatory-io/signatory-core/vault"
+	"gopkg.in/yaml.v3"
 )
 
 const storeDir = "key_store"
@@ -41,6 +42,10 @@ type localKey struct {
 	data      *utils.KeyFile
 	decrypted *decryptedKey
 	v         *LocalVault
+}
+
+type localConfig struct {
+	KeyPath string `yaml:"key_path"`
 }
 
 func (l *localKey) Algorithm() crypto.Algorithm { return l.pub.PublicKeyType() }
@@ -308,7 +313,26 @@ func New(storeDir string) (*LocalVault, error) {
 type fact struct{}
 
 func (fact) New(ctx context.Context, opt vault.GlobalOptions, config any) (vault.Vault, error) {
-	dir := filepath.Join(opt.BasePath(), storeDir)
+	node, ok := config.(*yaml.Node)
+	if !ok {
+		return nil, fmt.Errorf("(LocalVault): config is missing")
+	}
+	var path string
+	if node.Kind == yaml.ScalarNode {
+		if err := node.Decode(&path); err != nil {
+			return nil, err
+		}
+	} else {
+		var conf localConfig
+		if err := node.Decode(&conf); err != nil {
+			return nil, err
+		}
+		path = conf.KeyPath
+	}
+	dir := filepath.Join(opt.BasePath(), path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, err
+	}
 	return New(dir)
 }
 
