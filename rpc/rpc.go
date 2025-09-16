@@ -169,6 +169,9 @@ func (h *Handler) RegisterModule(path string, object any) {
 
 	for i := range v.NumMethod() {
 		methodDesc := t.Method(i)
+		if methodDesc.Name == "RegisterSelf" {
+			continue
+		}
 		var cc strings.Builder
 		for i, r := range methodDesc.Name {
 			if i == 0 {
