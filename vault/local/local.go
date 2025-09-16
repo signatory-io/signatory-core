@@ -327,7 +327,11 @@ func (fact) New(ctx context.Context, opt vault.GlobalOptions, config any) (vault
 		if err := node.Decode(&conf); err != nil {
 			return nil, err
 		}
-		path = conf.KeyPath
+		if conf.KeyPath == "" {
+			path = storeDir
+		} else {
+			path = conf.KeyPath
+		}
 	}
 	dir := filepath.Join(opt.BasePath(), path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
