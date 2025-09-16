@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -22,6 +23,12 @@ func NewHTTPHandler[L Layout[C, M], C codec.Codec, M Message[C]](h *Handler) *HT
 	return &HTTPHandler[L, C, M]{
 		h: h,
 	}
+}
+
+type remoteAddr net.TCPAddr
+
+func (c *remoteAddr) RemoteAddr() net.Addr {
+	return (*net.TCPAddr)(c)
 }
 
 func (h *HTTPHandler[L, C, M]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -51,14 +58,20 @@ func (h *HTTPHandler[L, C, M]) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	id := msg.GetID()
-	res, err := handleCall[C](h.h, r.Context(), req)
+	ra, err := net.ResolveTCPAddr("tcp", r.RemoteAddr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var ctxValue Context = (*remoteAddr)(ra)
+	res, err := handleCall[C](h.h, context.WithValue(r.Context(), rpcCtxKey{}, ctxValue), req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	var layout L
+	id := msg.GetID()
 	responseMsg := layout.NewResponse(id, res)
 	buf, err := codec.Marshal(&responseMsg)
 	if err != nil {

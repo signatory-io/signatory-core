@@ -35,6 +35,10 @@ type Unlocker interface {
 	Unlock(ctx context.Context, sm SecretManager) error
 }
 
+type HealthStatus interface {
+	HealthStatus(ctx context.Context) bool
+}
+
 type GetSecretHint uint
 
 const (

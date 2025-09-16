@@ -12,8 +12,8 @@ type Service struct {
 	vault.SecretManager
 }
 
-func (s Service) RegisterSelf(h *rpc.Handler) {
-	h.RegisterModule("sm", s)
+func (s Service) RegisterSelf(r rpc.Registrar) {
+	r.RegisterModule("sm", s)
 }
 
 type Proxy struct {

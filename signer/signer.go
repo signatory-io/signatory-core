@@ -195,3 +195,14 @@ func (s *Signer) GetKey(ctx context.Context, pkh *crypto.PublicKeyHash) (KeyRefe
 	}
 	return nil, rpc.WrapError(fmt.Errorf("key %v is not found", pkh), CodeKeyNotFound)
 }
+
+func (s *Signer) HealthStatus(ctx context.Context) bool {
+	for _, v := range s.vaults {
+		if h, ok := v.vault.(vault.HealthStatus); ok {
+			if !h.HealthStatus(ctx) {
+				return false
+			}
+		}
+	}
+	return true
+}
