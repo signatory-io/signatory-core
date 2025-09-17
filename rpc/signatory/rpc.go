@@ -64,10 +64,13 @@ func (s *Service) ListVaults() (infos []VaultInfo, err error) {
 
 func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
 	c := rpc.GetContext(ctx)
-	secretManager := ui.InteractiveSecretManager{
-		UI: uirpc.Proxy{
-			RPC: c.Peer(),
-		},
+	var secretManager vault.SecretManager
+	if c, ok := c.(rpc.BidirectionalContext); ok {
+		secretManager = ui.InteractiveSecretManager{
+			UI: uirpc.Proxy{
+				RPC: c.Peer(),
+			},
+		}
 	}
 	vi, err := s.Signatory.GetVault(vaultID)
 	if err != nil {
@@ -100,10 +103,13 @@ func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Al
 
 func (s *Service) UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
 	c := rpc.GetContext(ctx)
-	secretManager := ui.InteractiveSecretManager{
-		UI: uirpc.Proxy{
-			RPC: c.Peer(),
-		},
+	var secretManager vault.SecretManager
+	if c, ok := c.(rpc.BidirectionalContext); ok {
+		secretManager = ui.InteractiveSecretManager{
+			UI: uirpc.Proxy{
+				RPC: c.Peer(),
+			},
+		}
 	}
 	key, err := s.Signatory.GetKey(ctx, pkh)
 	if err != nil {

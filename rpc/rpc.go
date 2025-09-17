@@ -44,13 +44,14 @@ func mkErrorResponse[C codec.Codec](err error, code int) *Response[C] {
 }
 
 type Context interface {
-	Peer() Caller
-	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
 }
 
+type BidirectionalContext interface {
+	Peer() Caller
+}
+
 type AuthenticatedContext interface {
-	Context
 	SessionID() []byte
 	RemotePublicKey() *ed25519.PublicKey
 }
@@ -62,7 +63,10 @@ type Caller interface {
 type rpcCtxKey struct{}
 
 func GetContext(ctx context.Context) Context {
-	return ctx.Value(rpcCtxKey{}).(Context)
+	if val := ctx.Value(rpcCtxKey{}); val != nil {
+		return val.(Context)
+	}
+	return nil
 }
 
 // error is returned only in case of the context cancellation
@@ -172,14 +176,16 @@ func (h *Handler) RegisterModule(path string, object any) {
 		if methodDesc.Name == "RegisterSelf" {
 			continue
 		}
-		var cc strings.Builder
-		for i, r := range methodDesc.Name {
-			if i == 0 {
-				r = unicode.ToLower(r)
+		if methodDesc.IsExported() {
+			var cc strings.Builder
+			for i, r := range methodDesc.Name {
+				if i == 0 {
+					r = unicode.ToLower(r)
+				}
+				cc.WriteRune(r)
 			}
-			cc.WriteRune(r)
+			table[cc.String()] = newMethod(v.Method(i))
 		}
-		table[cc.String()] = newMethod(v.Method(i))
 	}
 
 	h.RegisterModuleMethodTable(path, table)
@@ -187,8 +193,13 @@ func (h *Handler) RegisterModule(path string, object any) {
 
 func (h *Handler) Register(obj Module) { obj.RegisterSelf(h) }
 
+type Registrar interface {
+	RegisterModuleMethodTable(path string, methods MethodTable)
+	RegisterModule(path string, object any)
+}
+
 type Module interface {
-	RegisterSelf(h *Handler)
+	RegisterSelf(r Registrar)
 }
 
 func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
@@ -239,7 +250,7 @@ func mkCallCtx[C codec.Codec](ctx context.Context, conn conn.EncodedConn[C], rpc
 		EncodedConn: conn,
 		rpc:         rpc,
 	}
-	var val any
+	var val Context
 	if auth, ok := conn.Inner().(secure.AuthenticatedConn); ok {
 		val = &rpcAuthCtx[C]{
 			rpcCtx:            c,

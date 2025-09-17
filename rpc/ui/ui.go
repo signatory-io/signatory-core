@@ -38,8 +38,8 @@ type confirmation struct {
 	Prompt string `cbor:"0,keyasint,omitempty"`
 }
 
-func (r Service) RegisterSelf(h *rpc.Handler) {
-	h.RegisterModule("ui", r)
+func (r Service) RegisterSelf(reg rpc.Registrar) {
+	reg.RegisterModule("ui", r)
 }
 
 func (r Service) ErrorMessage(ctx context.Context, msg string) error {
