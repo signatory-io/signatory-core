@@ -6,11 +6,11 @@ import (
 	"net"
 	"os"
 
+	"github.com/goccy/go-yaml"
 	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/rpc/conn/secure"
 	"github.com/signatory-io/signatory-core/utils"
-	"gopkg.in/yaml.v3"
 )
 
 type KeysFile string

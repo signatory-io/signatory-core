@@ -13,10 +13,10 @@ const (
 type Logger interface {
 	With(field string, value any) Logger
 	WithFields(fields map[string]any) Logger
-	Log(level Level, format string, args ...any)
-	Error(format string, args ...any)
-	Warn(format string, args ...any)
-	Info(format string, args ...any)
-	Debug(format string, args ...any)
-	Trace(format string, args ...any)
+	Logf(level Level, format string, args ...any)
+	Errorf(format string, args ...any)
+	Warnf(format string, args ...any)
+	Infof(format string, args ...any)
+	Debugf(format string, args ...any)
+	Tracef(format string, args ...any)
 }

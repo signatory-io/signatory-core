@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/goccy/go-yaml"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 func NewConfigCommand(conf *RootContextConfig) *cobra.Command {

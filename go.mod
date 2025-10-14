@@ -9,13 +9,13 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/ecadlabs/goblst v1.1.0
 	github.com/fxamacker/cbor/v2 v2.8.0
+	github.com/goccy/go-yaml v1.18.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.37.0
 	golang.org/x/sys v0.32.0
 	golang.org/x/term v0.31.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -34,4 +34,5 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
