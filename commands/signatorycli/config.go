@@ -10,6 +10,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -114,7 +115,7 @@ func newIDCommand(conf *RootContextConfig) *cobra.Command {
 		Aliases: []string{"p"},
 		Short:   "Print the public key",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			priv, err := conf.LoadIdentity()
+			priv, err := utils.LoadIdentity(conf.GetIdentityFile())
 			if err != nil {
 				return err
 			}

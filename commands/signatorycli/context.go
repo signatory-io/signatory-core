@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/goccy/go-yaml"
-	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
 	"github.com/signatory-io/signatory-core/rpc/signatory"
+	"github.com/signatory-io/signatory-core/utils"
 	"github.com/spf13/pflag"
 )
 
@@ -67,7 +67,7 @@ func (r *RootContextConfig) NewContext() (*RootContext, error) {
 		ctx.Endpoint = r.GetEndpoint()
 	}
 	if secure {
-		id, err := r.LoadIdentity()
+		id, err := utils.LoadIdentity(r.GetIdentityFile())
 		if err != nil {
 			return nil, err
 		}
@@ -96,25 +96,6 @@ func (r *RootContextConfig) GetIdentityFile() string {
 		return filepath.Join(r.GetBaseDir(), identityFile)
 	}
 	return r.Identity
-}
-
-func (r *RootContextConfig) LoadIdentity() (*ed25519.PrivateKey, error) {
-	data, err := os.ReadFile(r.GetIdentityFile())
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			fmt.Println("To use secure connection you first have to create an identity key using `signatory-cli config identity generate'")
-		}
-		return nil, err
-	}
-	key, err := cosekey.ParsePrivateKey(data)
-	if err != nil {
-		return nil, err
-	}
-	id, ok := key.(*ed25519.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("unexpected key type %T", key)
-	}
-	return id, nil
 }
 
 func (r RootContextConfig) GetEndpoint() string {

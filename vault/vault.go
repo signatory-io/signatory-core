@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"iter"
 
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 	"github.com/signatory-io/signatory-core/crypto"
+	"github.com/signatory-io/signatory-core/utils"
 )
 
 var (
@@ -78,12 +81,8 @@ type KeyIterator interface {
 	Err() error
 }
 
-type GlobalOptions interface {
-	BasePath() string
-}
-
 type VaultFactory interface {
-	New(ctx context.Context, opt GlobalOptions, config any) (Vault, error)
+	New(ctx context.Context, opt utils.GlobalOptions, config any) (Vault, error)
 	DefaultConfig() any
 }
 
@@ -118,3 +117,23 @@ type vaultError struct {
 func WrapError(v Vault, err error) error { return vaultError{err: err, v: v} }
 func (e vaultError) Error() string       { return fmt.Sprintf("(%s): %v", e.v.InstanceInfo(), e.err) }
 func (e vaultError) Unwrap() error       { return e.err }
+
+type Config struct {
+	Driver string   `yaml:"driver"`
+	Config ast.Node `yaml:"config"`
+}
+
+func New(ctx context.Context, conf *Config, opt utils.GlobalOptions, man Manager) (Vault, error) {
+	if man == nil {
+		man = defaultRegistry
+	}
+	f := man.GetFactory(conf.Driver)
+	if f == nil {
+		return nil, fmt.Errorf("unknown vault driver %s", conf.Driver)
+	}
+	c := f.DefaultConfig()
+	if err := yaml.NodeToValue(conf.Config, c); err != nil {
+		return nil, err
+	}
+	return f.New(ctx, opt, c)
+}

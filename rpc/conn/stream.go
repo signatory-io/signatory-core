@@ -46,8 +46,8 @@ type EncodedStreamListener[C codec.Codec, L Listener[net.Conn]] struct {
 	listener L
 }
 
-func NewEncodedStreamListener[C codec.Codec, L Listener[net.Conn]](l L) EncodedStreamListener[C, L] {
-	return EncodedStreamListener[C, L]{listener: l}
+func NewEncodedStreamListener[C codec.Codec, L Listener[net.Conn]](l L) *EncodedStreamListener[C, L] {
+	return &EncodedStreamListener[C, L]{listener: l}
 }
 
 func (s *EncodedStreamListener[C, L]) Accept() (*EncodedStreamConn[C], error) {

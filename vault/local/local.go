@@ -13,7 +13,8 @@ import (
 
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/keygen"
-	"github.com/signatory-io/signatory-core/crypto/utils"
+	cryptoutils "github.com/signatory-io/signatory-core/crypto/utils"
+	"github.com/signatory-io/signatory-core/utils"
 	"github.com/signatory-io/signatory-core/vault"
 )
 
@@ -38,7 +39,7 @@ type LocalVault struct {
 
 type localKey struct {
 	pub       crypto.PublicKey
-	data      *utils.KeyFile
+	data      *cryptoutils.KeyFile
 	decrypted *decryptedKey
 	v         *LocalVault
 }
@@ -173,7 +174,7 @@ func (it *keyIter) Keys() iter.Seq[vault.KeyReference] {
 			}
 
 			filePath := filepath.Join(it.dir, entry.Name())
-			kd, err := utils.ReadKeyFile(filePath)
+			kd, err := cryptoutils.ReadKeyFile(filePath)
 			if err != nil {
 				it.err = err
 				return
@@ -269,7 +270,7 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 		}
 	}
 
-	data := utils.NewKeyFile(signer, secret)
+	data := cryptoutils.NewKeyFile(signer, secret)
 	key := localKey{
 		pub:  pub,
 		data: data,
@@ -283,7 +284,7 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 	}
 
 	name := filepath.Join(l.storeDir, hex.EncodeToString(pkh[:]))
-	if err := utils.WriteKeyFile(name, "_tmp", data, 0600); err != nil {
+	if err := cryptoutils.WriteKeyFile(name, "_tmp", data, 0600); err != nil {
 		return nil, vault.WrapError(l, err)
 	}
 
@@ -307,8 +308,8 @@ func New(storeDir string) (*LocalVault, error) {
 
 type fact struct{}
 
-func (fact) New(ctx context.Context, opt vault.GlobalOptions, config any) (vault.Vault, error) {
-	dir := filepath.Join(opt.BasePath(), storeDir)
+func (fact) New(ctx context.Context, opt utils.GlobalOptions, config any) (vault.Vault, error) {
+	dir := filepath.Join(opt.GetBasePath(), storeDir)
 	return New(dir)
 }
 

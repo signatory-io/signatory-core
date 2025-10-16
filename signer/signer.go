@@ -131,9 +131,9 @@ type VaultInfo interface {
 	Vault() vault.Vault
 }
 
-func New(vaults map[string]vault.Vault) *Signer {
+func New(vaults iter.Seq2[string, vault.Vault]) *Signer {
 	s := &Signer{
-		vaults:     make([]*vaultInst, 0, len(vaults)),
+		vaults:     make([]*vaultInst, 0),
 		vaultIndex: make(map[string]*vaultInst),
 		cache:      make(map[crypto.PublicKeyHash]keyRef),
 	}

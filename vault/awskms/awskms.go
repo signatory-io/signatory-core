@@ -10,6 +10,7 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/ecdsa"
 	"github.com/signatory-io/signatory-core/crypto/pkix"
+	"github.com/signatory-io/signatory-core/utils"
 	awsutils "github.com/signatory-io/signatory-core/utils/aws"
 	"github.com/signatory-io/signatory-core/vault"
 )
@@ -203,7 +204,7 @@ func (v *KMSVault) Ready(context.Context) (bool, error) { return true, nil }
 
 type fact struct{}
 
-func (fact) New(ctx context.Context, opt vault.GlobalOptions, config any) (vault.Vault, error) {
+func (fact) New(ctx context.Context, opt utils.GlobalOptions, config any) (vault.Vault, error) {
 	c := config.(*awsutils.Config)
 	cfg, err := awsutils.NewAWSConfig(ctx, c)
 	if err != nil {
