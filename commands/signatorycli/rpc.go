@@ -1,10 +1,10 @@
 package signatorycli
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -13,68 +13,50 @@ import (
 	"github.com/signatory-io/signatory-core/crypto/utils"
 	"github.com/signatory-io/signatory-core/rpc"
 	"github.com/signatory-io/signatory-core/rpc/cbor"
-	"github.com/signatory-io/signatory-core/rpc/conn"
-	"github.com/signatory-io/signatory-core/rpc/conn/codec"
-	"github.com/signatory-io/signatory-core/rpc/conn/secure"
-	signatoryrpc "github.com/signatory-io/signatory-core/rpc/signatory"
+	"github.com/signatory-io/signatory-core/rpc/rpcutils"
 	rpcui "github.com/signatory-io/signatory-core/rpc/ui"
+	"github.com/signatory-io/signatory-core/signer/api"
 	"github.com/signatory-io/signatory-core/ui"
 	"github.com/signatory-io/signatory-core/vault"
 	"github.com/spf13/cobra"
 )
 
-func (r *RootContext) NewRPC() (*cbor.RPC, error) {
-	tcpConn, err := net.Dial("tcp", r.Endpoint)
-	if err != nil {
-		return nil, err
-	}
-	var c conn.EncodedConn[codec.CBOR]
-	if r.Identity != nil {
-		sc, err := secure.NewSecureConn(tcpConn, r.Identity, nil)
-		if err != nil {
-			return nil, err
-		}
-		c = conn.NewEncodedPacketConn[codec.CBOR](sc)
-	} else {
-		c = conn.NewEncodedStreamConn[codec.CBOR](tcpConn)
-	}
-
+func (r *Config) NewRPC(ctx context.Context) (rpcutils.CallerCloser, error) {
 	var termUI ui.Terminal
 	uiSvc := rpcui.Service{
 		UI: &termUI,
 	}
 	handler := rpc.NewHandler()
 	handler.Register(uiSvc)
-
-	return cbor.NewRPC(c, handler), nil
+	return rpcutils.NewRPCClient[cbor.Layout](ctx, r.RPCEndpoint, handler, r)
 }
 
-func NewVaultCommand(conf *RootContextConfig) *cobra.Command {
+func newVaultCommand() *cobra.Command {
 	cmd := cobra.Command{
 		Use:   "vault",
 		Short: "Vault operations",
 	}
-	cmd.AddCommand(newListVaultsCommand(conf))
+	cmd.AddCommand(newListVaultsCommand())
 	return &cmd
 }
 
-func newListVaultsCommand(conf *RootContextConfig) *cobra.Command {
+func newListVaultsCommand() *cobra.Command {
 	cmd := cobra.Command{
 		Use:     "list",
 		Aliases: []string{"l"},
 		Short:   "List vaults",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := conf.NewContext()
-			if err != nil {
+			conf := DefaultConfig()
+			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
 				return err
 			}
-			r, err := ctx.NewRPC()
+			r, err := conf.NewRPC(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer r.Close()
 
-			var vaults []signatoryrpc.VaultInfo
+			var vaults []api.VaultInfo
 			if err = r.Call(cmd.Context(), &vaults, "sig", "listVaults"); err != nil {
 				return err
 			}
@@ -91,19 +73,19 @@ func newListVaultsCommand(conf *RootContextConfig) *cobra.Command {
 	return &cmd
 }
 
-func NewKeyCommand(conf *RootContextConfig) *cobra.Command {
+func newKeyCommand() *cobra.Command {
 	cmd := cobra.Command{
 		Use:   "key",
 		Short: "Keys operations",
 	}
-	cmd.AddCommand(newListKeysCommand(conf))
-	cmd.AddCommand(newGenerateKeyCommand(conf))
-	cmd.AddCommand(newUnlockCommand(conf))
+	cmd.AddCommand(newListKeysCommand())
+	cmd.AddCommand(newGenerateKeyCommand())
+	cmd.AddCommand(newUnlockCommand())
 	cmd.AddCommand(newListAlgsCommand())
 	return &cmd
 }
 
-func newListKeysCommand(conf *RootContextConfig) *cobra.Command {
+func newListKeysCommand() *cobra.Command {
 	var (
 		vaultID  string
 		algNames []string
@@ -123,18 +105,17 @@ func newListKeysCommand(conf *RootContextConfig) *cobra.Command {
 					}
 				}
 			}
-
-			ctx, err := conf.NewContext()
-			if err != nil {
+			conf := DefaultConfig()
+			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
 				return err
 			}
-			r, err := ctx.NewRPC()
+			r, err := conf.NewRPC(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer r.Close()
 
-			var keys []*signatoryrpc.KeyInfo
+			var keys []*api.KeyInfo
 			if err = r.Call(cmd.Context(), &keys, "sig", "listKeys", vaultID, algs); err != nil {
 				return err
 			}
@@ -160,7 +141,7 @@ func newListKeysCommand(conf *RootContextConfig) *cobra.Command {
 	return &cmd
 }
 
-func newGenerateKeyCommand(conf *RootContextConfig) *cobra.Command {
+func newGenerateKeyCommand() *cobra.Command {
 	var (
 		vaultID string
 		algName string
@@ -177,17 +158,17 @@ func newGenerateKeyCommand(conf *RootContextConfig) *cobra.Command {
 				return fmt.Errorf("unknown algorithm %s", algName)
 			}
 
-			ctx, err := conf.NewContext()
-			if err != nil {
+			conf := DefaultConfig()
+			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
 				return err
 			}
-			r, err := ctx.NewRPC()
+			r, err := conf.NewRPC(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer r.Close()
 
-			var key signatoryrpc.KeyInfo
+			var key api.KeyInfo
 			if err = r.Call(cmd.Context(), &key, "sig", "generateKey", vaultID, alg, vault.EncryptKey(encrypt)); err != nil {
 				return err
 			}
@@ -229,7 +210,7 @@ func newGenerateKeyCommand(conf *RootContextConfig) *cobra.Command {
 	return &cmd
 }
 
-func newUnlockCommand(conf *RootContextConfig) *cobra.Command {
+func newUnlockCommand() *cobra.Command {
 	cmd := cobra.Command{
 		Use:   "unlock PUBLIC_KEY_HASH",
 		Short: "Unlock a key",
@@ -245,11 +226,11 @@ func newUnlockCommand(conf *RootContextConfig) *cobra.Command {
 			}
 			copy(pkh[:], v)
 
-			ctx, err := conf.NewContext()
-			if err != nil {
+			conf := DefaultConfig()
+			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
 				return err
 			}
-			r, err := ctx.NewRPC()
+			r, err := conf.NewRPC(cmd.Context())
 			if err != nil {
 				return err
 			}

@@ -1,4 +1,4 @@
-package signatory
+package api
 
 import (
 	"context"
@@ -18,16 +18,16 @@ const (
 	DefaultSecurePort = 37314
 )
 
-type Service struct {
-	Signatory *signer.Signer
+type API struct {
+	Signer *signer.Signer
 }
 
-func (s *Service) RegisterSelf(h *rpc.Handler) {
+func (s *API) RegisterSelf(h rpc.Registrar) {
 	h.RegisterModule("sig", s)
 }
 
-func (s *Service) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
-	it := s.Signatory.ListKeys(ctx, vaultID, filter)
+func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
+	it := s.Signer.ListKeys(ctx, vaultID, filter)
 	for key := range it.Keys() {
 		pub := key.PublicKey()
 		keyInfo := KeyInfo{
@@ -51,8 +51,8 @@ func (s *Service) ListKeys(ctx context.Context, vaultID string, filter []crypto.
 	return
 }
 
-func (s *Service) ListVaults() (infos []VaultInfo, err error) {
-	for v := range s.Signatory.ListVaults() {
+func (s *API) ListVaults() (infos []VaultInfo, err error) {
+	for v := range s.Signer.ListVaults() {
 		infos = append(infos, VaultInfo{
 			ID:           v.ID(),
 			Name:         v.Vault().Name(),
@@ -62,7 +62,7 @@ func (s *Service) ListVaults() (infos []VaultInfo, err error) {
 	return
 }
 
-func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
+func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -72,7 +72,7 @@ func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Al
 			},
 		}
 	}
-	vi, err := s.Signatory.GetVault(vaultID)
+	vi, err := s.Signer.GetVault(vaultID)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (s *Service) GenerateKey(ctx context.Context, vaultID string, alg crypto.Al
 	return &keyInfo, nil
 }
 
-func (s *Service) UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
+func (s *API) UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error {
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -111,7 +111,7 @@ func (s *Service) UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) erro
 			},
 		}
 	}
-	key, err := s.Signatory.GetKey(ctx, pkh)
+	key, err := s.Signer.GetKey(ctx, pkh)
 	if err != nil {
 		return err
 	}

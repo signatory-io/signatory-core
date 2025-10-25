@@ -16,7 +16,7 @@ import (
 	"github.com/signatory-io/signatory-core/utils"
 )
 
-type RPCService interface {
+type Service interface {
 	Shutdown(ctx context.Context) error
 }
 
@@ -40,7 +40,7 @@ func (s *httpSvc) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
 }
 
-func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpointURL string, h *rpc.Handler, log logger.Logger, g utils.GlobalOptions) (RPCService, error) {
+func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpointURL string, h *rpc.Handler, log logger.Logger, g utils.GlobalOptions) (Service, error) {
 	u, err := url.Parse(endpointURL)
 	if err != nil {
 		return nil, err
@@ -113,6 +113,58 @@ func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpoint
 		}, nil
 
 	default:
-		return nil, fmt.Errorf("unknown rpc protocol: %s", u.Scheme)
+		return nil, fmt.Errorf("unknown RPC transport: %s", u.Scheme)
+	}
+}
+
+type httpWrapper[L rpc.Layout[C, M], C codec.Codec, M rpc.Message[C]] struct {
+	*rpc.HTTPClient[L, C, M]
+}
+
+func (h httpWrapper[L, C, M]) Close() error { return nil }
+
+type CallerCloser interface {
+	rpc.Caller
+	Close() error
+}
+
+func NewRPCClient[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](ctx context.Context, endpointURL string, h *rpc.Handler, g utils.GlobalOptions) (CallerCloser, error) {
+	u, err := url.Parse(endpointURL)
+	if err != nil {
+		return nil, err
+	}
+
+	switch u.Scheme {
+	case "tcp":
+		var d net.Dialer
+		tcpConn, err := d.DialContext(ctx, "tcp", u.Host)
+		if err != nil {
+			return nil, err
+		}
+		c := conn.NewEncodedStreamConn[C](tcpConn)
+		return rpc.New[E](c, h), nil
+
+	case "secure":
+		var d net.Dialer
+		tcpConn, err := d.DialContext(ctx, "tcp", u.Host)
+		if err != nil {
+			return nil, err
+		}
+		key, err := utils.LoadIdentity(utils.GetPath(u.Fragment, g))
+		if err != nil {
+			return nil, err
+		}
+		secureConn, err := secure.NewSecureConn(tcpConn, key, nil)
+		if err != nil {
+			return nil, err
+		}
+		c := conn.NewEncodedPacketConn[C](secureConn)
+		return rpc.New[E](c, h), nil
+
+	case "http":
+		return httpWrapper[E, C, M]{rpc.NewHTTPClient[E](endpointURL, nil)}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown RPC transport: %s", u.Scheme)
 	}
 }

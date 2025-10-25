@@ -1,112 +1,86 @@
 package signatorycli
 
 import (
-	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
 	"github.com/goccy/go-yaml"
-	"github.com/signatory-io/signatory-core/crypto/ed25519"
-	"github.com/signatory-io/signatory-core/rpc/signatory"
-	"github.com/signatory-io/signatory-core/utils"
+	"github.com/signatory-io/signatory-core/signer/api"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 const (
-	defaultBaseDir = ".signatory-cli"
-	defaultHost    = "localhost"
-	defaultConfig  = "config.yaml"
-	identityFile   = "id_key"
+	defaultBaseDir      = ".signatory-cli"
+	defaultHost         = "localhost"
+	defaultConfig       = "config.yaml"
+	defaultIdentityFile = "id_key"
 )
 
-type configFile struct {
-	Endpoint string `yaml:"endpoint"`
-	Secure   bool   `yaml:"secure"`
+type Config struct {
+	BasePath    string `yaml:"base_path"`
+	RPCEndpoint string `yaml:"rpc_endpoint"`
 }
 
-type RootContextConfig struct {
-	BaseDir    string
-	ConfigFile string
-	Endpoint   string
-	Secure     bool
-	Identity   string
-	Flags      *pflag.FlagSet
-}
+func (c *Config) GetBasePath() string { return c.BasePath }
 
-type RootContext struct {
-	BaseDir  string
-	Endpoint string
-	Identity *ed25519.PrivateKey
-}
-
-func (r *RootContextConfig) NewContext() (*RootContext, error) {
-	ctx := RootContext{
-		BaseDir: r.GetBaseDir(),
+func LoadConfig(conf *Config, path string) error {
+	buf, err := os.ReadFile(path)
+	if err != nil {
+		return err
 	}
-	var secure bool
-	buf, err := os.ReadFile(r.GetConfigFile())
-	if err == nil {
-		var conf configFile
-		if err = yaml.Unmarshal(buf, &conf); err != nil {
-			return nil, err
-		}
+	return yaml.Unmarshal(buf, conf)
+}
 
-		ctx.Endpoint = conf.Endpoint
-		if r.Endpoint != "" && r.Flags.Changed("endpoint") {
-			ctx.Endpoint = r.Endpoint
-		}
-
-		secure = conf.Secure
-		if r.Flags.Changed("secure-connection") {
-			secure = r.Secure
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	} else {
-		ctx.Endpoint = r.GetEndpoint()
+func DefaultConfig() *Config {
+	dir, _ := os.UserHomeDir()
+	return &Config{
+		BasePath:    filepath.Join(dir, defaultBaseDir),
+		RPCEndpoint: fmt.Sprintf("tcp://%s:%d", defaultHost, api.DefaultPort),
 	}
-	if secure {
-		id, err := utils.LoadIdentity(r.GetIdentityFile())
+}
+
+func LoadConfigFromCmdline(conf *Config, f *pflag.FlagSet) error {
+	baseDir, err := f.GetString("base-dir")
+	if err != nil {
+		panic(err)
+	}
+	confPath, err := f.GetString("config-file")
+	if err != nil {
+		panic(err)
+	}
+	if err := LoadConfig(conf, getPath(confPath, baseDir)); err != nil {
+		return err
+	}
+	if f.Changed("base-dir") {
+		conf.BasePath = baseDir
+	}
+	if f.Changed("rpc-address") {
+		rpcAddr, err := f.GetString("rpc-address")
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
-		ctx.Identity = id
+		conf.RPCEndpoint = rpcAddr
 	}
-	return &ctx, nil
+	// add default RPC identity file
+	u, err := url.Parse(conf.RPCEndpoint)
+	if err != nil {
+		return nil
+	}
+	if u.Scheme == "secure" && u.Fragment == "" {
+		u.Fragment = defaultIdentityFile
+		conf.RPCEndpoint = u.String()
+	}
+	return nil
 }
 
-func (r *RootContextConfig) GetBaseDir() string {
-	if r.BaseDir == "" {
-		dir, _ := os.UserHomeDir()
-		return filepath.Join(dir, defaultBaseDir)
-	}
-	return r.BaseDir
-}
+func (c *Config) RegisterFlags(f *pflag.FlagSet, cmd *cobra.Command) {
+	f.StringP("base-dir", "b", c.BasePath, "Base directory")
+	f.StringP("config-file", "c", defaultConfig, "Configuration file path (absolute or relative to the base directory)")
+	f.StringP("rpc-address", "r", c.RPCEndpoint, "RPC endpoint address, format: transport://[host]:port[#identity], where transport is [tcp, secure, http], and identity is a key file for secure connection")
 
-func (r *RootContextConfig) GetConfigFile() string {
-	if r.ConfigFile == "" {
-		return filepath.Join(r.GetBaseDir(), defaultConfig)
-	}
-	return r.ConfigFile
-}
-
-func (r *RootContextConfig) GetIdentityFile() string {
-	if r.Identity == "" {
-		return filepath.Join(r.GetBaseDir(), identityFile)
-	}
-	return r.Identity
-}
-
-func (r RootContextConfig) GetEndpoint() string {
-	if r.Endpoint == "" {
-		var port uint
-		if r.Secure {
-			port = signatory.DefaultSecurePort
-		} else {
-			port = signatory.DefaultPort
-		}
-		return fmt.Sprintf("%s:%d", defaultHost, port)
-	}
-	return r.Endpoint
+	cmd.MarkFlagFilename("config-file")
+	cmd.MarkFlagDirname("base-dir")
 }

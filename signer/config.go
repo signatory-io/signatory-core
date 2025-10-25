@@ -11,12 +11,12 @@ import (
 
 type Config interface {
 	utils.GlobalOptions
-	Vaults() iter.Seq2[string, *vault.Config]
+	GetVaults() iter.Seq2[string, *vault.Config]
 }
 
 func NewWithConfig(ctx context.Context, conf Config) (*Signer, error) {
 	vaults := make(map[string]vault.Vault)
-	for id, vc := range conf.Vaults() {
+	for id, vc := range conf.GetVaults() {
 		v, err := vault.New(ctx, vc, conf, nil)
 		if err != nil {
 			return nil, err
