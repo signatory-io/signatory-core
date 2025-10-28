@@ -46,8 +46,9 @@ func newListVaultsCommand() *cobra.Command {
 		Aliases: []string{"l"},
 		Short:   "List vaults",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conf := DefaultConfig()
-			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
+			var conf Config
+			conf.Default()
+			if err := conf.FromCmdline(true, cmd.Flags()); err != nil {
 				return err
 			}
 			r, err := conf.NewRPC(cmd.Context())
@@ -105,8 +106,9 @@ func newListKeysCommand() *cobra.Command {
 					}
 				}
 			}
-			conf := DefaultConfig()
-			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
+			var conf Config
+			conf.Default()
+			if err := conf.FromCmdline(true, cmd.Flags()); err != nil {
 				return err
 			}
 			r, err := conf.NewRPC(cmd.Context())
@@ -158,8 +160,9 @@ func newGenerateKeyCommand() *cobra.Command {
 				return fmt.Errorf("unknown algorithm %s", algName)
 			}
 
-			conf := DefaultConfig()
-			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
+			var conf Config
+			conf.Default()
+			if err := conf.FromCmdline(true, cmd.Flags()); err != nil {
 				return err
 			}
 			r, err := conf.NewRPC(cmd.Context())
@@ -226,8 +229,9 @@ func newUnlockCommand() *cobra.Command {
 			}
 			copy(pkh[:], v)
 
-			conf := DefaultConfig()
-			if err := LoadConfigFromCmdline(conf, cmd.Flags()); err != nil {
+			var conf Config
+			conf.Default()
+			if err := conf.FromCmdline(true, cmd.Flags()); err != nil {
 				return err
 			}
 			r, err := conf.NewRPC(cmd.Context())

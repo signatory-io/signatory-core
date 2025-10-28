@@ -16,6 +16,7 @@ import (
 const (
 	DefaultPort       = 37313
 	DefaultSecurePort = 37314
+	DefaultHost       = "localhost"
 )
 
 type API struct {
