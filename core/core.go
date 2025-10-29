@@ -9,7 +9,6 @@ import (
 	"github.com/signatory-io/signatory-core/rpc/rpcutils"
 	"github.com/signatory-io/signatory-core/signer"
 	signerapi "github.com/signatory-io/signatory-core/signer/api"
-	"github.com/sirupsen/logrus"
 )
 
 type Service struct {
@@ -19,9 +18,6 @@ type Service struct {
 }
 
 func New(ctx context.Context, conf *Config, logger logger.Logger) (*Service, error) {
-	if logger == nil {
-		logger = LogrusAdapter{Logger: logrus.StandardLogger()}
-	}
 	signer, err := signer.NewWithConfig(ctx, conf)
 	if err != nil {
 		return nil, err
