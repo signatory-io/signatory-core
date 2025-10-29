@@ -26,7 +26,6 @@ type svc[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec, T conn.EncodedConn
 }
 
 func (s *svc[E, M, C, T, L]) Shutdown(ctx context.Context) error {
-	s.log.Info("Stopping RPC service")
 	return s.srv.Shutdown(ctx)
 }
 
@@ -36,7 +35,6 @@ type httpSvc struct {
 }
 
 func (s *httpSvc) Shutdown(ctx context.Context) error {
-	s.log.Info("Stopping HTTP RPC service")
 	return s.srv.Shutdown(ctx)
 }
 
@@ -45,7 +43,7 @@ func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpoint
 	if err != nil {
 		return nil, err
 	}
-	l := log.With("listen_address", u.Host)
+	l := log.With("address", u.Host)
 
 	switch u.Scheme {
 	case "tcp":
@@ -56,7 +54,6 @@ func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpoint
 		listener := conn.NewEncodedStreamListener[C](tl)
 		srv := rpc.NewServer[E, M, C, *conn.EncodedStreamConn[C], *conn.EncodedStreamListener[C, net.Listener]](h)
 
-		l.Info("Starting RPC service")
 		go func() {
 			if err := srv.Serve(listener); err != nil {
 				l.Error(err)
@@ -83,7 +80,6 @@ func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpoint
 			// TODO: Authenticator
 		})
 		srv := rpc.NewServer[E, M, C, *conn.EncodedPacketConn[C, *secure.SecureConn], *conn.EncodedPacketListener[C, *secure.SecureListener, *secure.SecureConn]](h)
-		l.Info("Starting RPC service")
 		go func() {
 			if err := srv.Serve(&listener); err != nil {
 				l.Error(err)
@@ -101,7 +97,6 @@ func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpoint
 			Handler: rpc.NewHTTPHandler[E](h),
 			// TODO: TLS
 		}
-		l.Info("Starting HTTP RPC service")
 		go func() {
 			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				l.Error(err)

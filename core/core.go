@@ -13,8 +13,9 @@ import (
 )
 
 type Service struct {
-	rpc rpcutils.Service
-	api *signerapi.API
+	rpc    rpcutils.Service
+	api    *signerapi.API
+	logger logger.Logger
 }
 
 func New(ctx context.Context, conf *Config, logger logger.Logger) (*Service, error) {
@@ -28,15 +29,21 @@ func New(ctx context.Context, conf *Config, logger logger.Logger) (*Service, err
 	api := signerapi.API{Signer: signer}
 	handler := rpc.NewHandler()
 	handler.Register(&api)
+	l := logger.With("address", conf.RPCAddress)
+	l.Info("Starting utility RPC service")
 	rpc, err := rpcutils.NewRPCService[cbor.Layout](conf.RPCAddress, handler, logger, conf)
 	if err != nil {
 		return nil, err
 	}
 	return &Service{
-		rpc: rpc,
-		api: &api,
+		rpc:    rpc,
+		api:    &api,
+		logger: l,
 	}, nil
 }
 
-func (s *Service) Signer() *signer.Signer             { return s.api.Signer }
-func (s *Service) Shutdown(ctx context.Context) error { return s.rpc.Shutdown(ctx) }
+func (s *Service) Signer() *signer.Signer { return s.api.Signer }
+func (s *Service) Shutdown(ctx context.Context) error {
+	s.logger.Info("Stopping utility RPC service")
+	return s.rpc.Shutdown(ctx)
+}
