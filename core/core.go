@@ -12,12 +12,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type CoreService struct {
+type Service struct {
 	rpc rpcutils.Service
 	api *signerapi.API
 }
 
-func New(ctx context.Context, conf *Config, logger logger.Logger) (*CoreService, error) {
+func New(ctx context.Context, conf *Config, logger logger.Logger) (*Service, error) {
 	if logger == nil {
 		logger = LogrusAdapter{Logger: logrus.StandardLogger()}
 	}
@@ -32,11 +32,11 @@ func New(ctx context.Context, conf *Config, logger logger.Logger) (*CoreService,
 	if err != nil {
 		return nil, err
 	}
-	return &CoreService{
+	return &Service{
 		rpc: rpc,
 		api: &api,
 	}, nil
 }
 
-func (s *CoreService) Signer() *signer.Signer             { return s.api.Signer }
-func (s *CoreService) Shutdown(ctx context.Context) error { return s.rpc.Shutdown(ctx) }
+func (s *Service) Signer() *signer.Signer             { return s.api.Signer }
+func (s *Service) Shutdown(ctx context.Context) error { return s.rpc.Shutdown(ctx) }
