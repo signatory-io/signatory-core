@@ -101,7 +101,7 @@ func LoadCoreConfigFromCmdline[T CoreConfig](conf T, loadFromFile bool, f *pflag
 	rpcAddr := conf.GetRPCAddress()
 	u, err := url.Parse(rpcAddr)
 	if err != nil {
-		return nil
+		return err
 	}
 	if u.Scheme == "secure" && u.Fragment == "" {
 		u.Fragment = DefaultIdentityFile
