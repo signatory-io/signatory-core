@@ -23,8 +23,16 @@ type API struct {
 	Signer *signer.Signer
 }
 
+type signerAPI interface {
+	ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error)
+	ListVaults() (infos []VaultInfo, err error)
+	GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error)
+	UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error
+}
+
 func (s *API) RegisterSelf(h rpc.Registrar) {
-	h.RegisterModule("sig", s)
+	var api signerAPI = s
+	h.RegisterModule("sig", api)
 }
 
 func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {

@@ -125,17 +125,29 @@ var (
 	errType = reflect.TypeOf((*error)(nil)).Elem()
 )
 
-func newMethod(fn reflect.Value) *Method {
+func newMethod(fn reflect.Value, name string) *Method {
 	// basic sanity check
 	t := fn.Type()
 	if t.Kind() != reflect.Func {
 		panic("not a function")
 	}
 	if t.NumOut() < 1 {
-		panic("insufficient number of results")
+		var panicMsg string
+		if name != "" {
+			panicMsg = fmt.Sprintf("method `%s' has insufficient number of results", name)
+		} else {
+			panicMsg = "insufficient number of results"
+		}
+		panic(panicMsg)
 	}
 	if t.Out(t.NumOut()-1) != errType {
-		panic("last result must be error")
+		var panicMsg string
+		if name != "" {
+			panicMsg = fmt.Sprintf("last result of method `%s' must be error", name)
+		} else {
+			panicMsg = "last result must be error"
+		}
+		panic(panicMsg)
 	}
 	return &Method{
 		fn: fn,
@@ -143,7 +155,7 @@ func newMethod(fn reflect.Value) *Method {
 }
 
 func NewMethod(f any) *Method {
-	return newMethod(reflect.ValueOf(f))
+	return newMethod(reflect.ValueOf(f), "")
 }
 
 type MethodTable map[string]*Method
@@ -181,7 +193,7 @@ func (h *Handler) RegisterModule(path string, object any) {
 				}
 				cc.WriteRune(r)
 			}
-			table[cc.String()] = newMethod(v.Method(i))
+			table[cc.String()] = newMethod(v.Method(i), methodDesc.Name)
 		}
 	}
 }
