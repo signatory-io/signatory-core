@@ -179,12 +179,16 @@ func (h *Handler) RegisterModule(path string, object any) {
 	}
 
 	v := reflect.ValueOf(object)
+	if v.Kind() == reflect.Pointer && v.Type().Elem().Kind() == reflect.Interface {
+		v = v.Elem()
+	}
 	t := v.Type()
 	numMethod := v.NumMethod()
 	table := make(MethodTable, numMethod)
 
 	for i := range v.NumMethod() {
 		methodDesc := t.Method(i)
+		fmt.Printf("%v\n", methodDesc)
 		if methodDesc.IsExported() {
 			var cc strings.Builder
 			for i, r := range methodDesc.Name {

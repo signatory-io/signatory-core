@@ -13,7 +13,7 @@ type Service struct {
 }
 
 func (s Service) RegisterSelf(r rpc.Registrar) {
-	r.RegisterModule("sm", s)
+	r.RegisterModule("sm", &s.SecretManager)
 }
 
 type Proxy struct {

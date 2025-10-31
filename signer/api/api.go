@@ -32,7 +32,7 @@ type signerAPI interface {
 
 func (s *API) RegisterSelf(h rpc.Registrar) {
 	var api signerAPI = s
-	h.RegisterModule("sig", api)
+	h.RegisterModule("sig", &api)
 }
 
 func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
