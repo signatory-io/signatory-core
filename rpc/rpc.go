@@ -188,7 +188,6 @@ func (h *Handler) RegisterModule(path string, object any) {
 
 	for i := range v.NumMethod() {
 		methodDesc := t.Method(i)
-		fmt.Printf("%v\n", methodDesc)
 		if methodDesc.IsExported() {
 			var cc strings.Builder
 			for i, r := range methodDesc.Name {
