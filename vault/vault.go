@@ -76,6 +76,10 @@ type Generator interface {
 	Generate(ctx context.Context, alg crypto.Algorithm, sm SecretManager, options GenerateOptions) (KeyReference, error)
 }
 
+type Importer interface {
+	Import(ctx context.Context, key crypto.PrivateKey, sm SecretManager, options GenerateOptions) (KeyReference, error)
+}
+
 type KeyIterator interface {
 	Keys() iter.Seq[KeyReference]
 	Err() error
@@ -120,7 +124,7 @@ func (e vaultError) Unwrap() error       { return e.err }
 
 type Config struct {
 	Driver string   `yaml:"driver"`
-	Config ast.Node `yaml:"config"`
+	Config ast.Node `yaml:"config,omitempty"`
 }
 
 func New(ctx context.Context, conf *Config, opt utils.GlobalOptions, man Manager) (Vault, error) {
@@ -132,8 +136,10 @@ func New(ctx context.Context, conf *Config, opt utils.GlobalOptions, man Manager
 		return nil, fmt.Errorf("unknown vault driver %s", conf.Driver)
 	}
 	c := f.DefaultConfig()
-	if err := yaml.NodeToValue(conf.Config, c); err != nil {
-		return nil, err
+	if conf.Config != nil {
+		if err := yaml.NodeToValue(conf.Config, c); err != nil {
+			return nil, err
+		}
 	}
 	return f.New(ctx, opt, c)
 }

@@ -19,7 +19,7 @@ type Config struct {
 	BasePath   string                   `yaml:"base_path"`
 	RPCAddress string                   `yaml:"rpc_address"` // transport://[host]:port[#identity], where transport is [tcp, secure, http], and identity is a key file for secure connection
 	LogLevel   logger.Level             `yaml:"log_level"`
-	Vaults     map[string]*vault.Config `yaml:"vaults"`
+	Vaults     map[string]*vault.Config `yaml:"vaults,omitempty"`
 }
 
 type CoreConfig interface {

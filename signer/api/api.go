@@ -6,6 +6,7 @@ import (
 
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/cose"
+	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
 	"github.com/signatory-io/signatory-core/rpc"
 	uirpc "github.com/signatory-io/signatory-core/rpc/ui"
 	"github.com/signatory-io/signatory-core/signer"
@@ -23,17 +24,7 @@ type API struct {
 	Signer *signer.Signer
 }
 
-type signerAPI interface {
-	ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error)
-	ListVaults() (infos []VaultInfo, err error)
-	GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error)
-	UnlockKey(ctx context.Context, pkh *crypto.PublicKeyHash) error
-}
-
-func (s *API) RegisterSelf(h rpc.Registrar) {
-	var api signerAPI = s
-	h.RegisterModule("sig", &api)
-}
+const Path = "signer"
 
 func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
 	it := s.Signer.ListKeys(ctx, vaultID, filter)
@@ -90,6 +81,49 @@ func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algori
 		return nil, rpc.WrapError(errors.New("key generation is not supported"), signer.ErrFeatureNotSupported)
 	}
 	key, err := gen.Generate(ctx, alg, secretManager, options)
+	if err != nil {
+		return nil, err
+	}
+	pub := key.PublicKey()
+	keyInfo := KeyInfo{
+		PublicKeyHash: crypto.NewPublicKeyHash(pub),
+		Algorithm:     pub.PublicKeyType(),
+		PublicKey:     pub.COSE(),
+		Vault: VaultInfo{
+			ID:           vi.ID(),
+			Name:         vi.Vault().Name(),
+			InstanceInfo: vi.Vault().InstanceInfo(),
+		},
+	}
+	if u, ok := key.(vault.Unlocker); ok {
+		keyInfo.Locked = u.IsLocked()
+	}
+	return &keyInfo, nil
+}
+
+func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, options vault.EncryptKey) (*KeyInfo, error) {
+	c := rpc.GetContext(ctx)
+	var secretManager vault.SecretManager
+	if c, ok := c.(rpc.BidirectionalContext); ok {
+		secretManager = ui.InteractiveSecretManager{
+			UI: uirpc.Proxy{
+				RPC: c.Peer(),
+			},
+		}
+	}
+	vi, err := s.Signer.GetVault(vaultID)
+	if err != nil {
+		return nil, err
+	}
+	imp, ok := vi.Vault().(vault.Importer)
+	if !ok {
+		return nil, rpc.WrapError(errors.New("key import is not supported"), signer.ErrFeatureNotSupported)
+	}
+	priv, err := cosekey.NewPrivateKey(input)
+	if err != nil {
+		return nil, err
+	}
+	key, err := imp.Import(ctx, priv, secretManager, options)
 	if err != nil {
 		return nil, err
 	}

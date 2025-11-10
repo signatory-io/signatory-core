@@ -8,12 +8,10 @@ import (
 	"github.com/signatory-io/signatory-core/vault"
 )
 
+const Path = "sm"
+
 type Service struct {
 	vault.SecretManager
-}
-
-func (s Service) RegisterSelf(r rpc.Registrar) {
-	r.RegisterModule("sm", &s.SecretManager)
 }
 
 type Proxy struct {
@@ -27,5 +25,4 @@ func (p Proxy) GetSecret(ctx context.Context, pkh *crypto.PublicKeyHash, alg cry
 
 var (
 	_ vault.SecretManager = (*Proxy)(nil)
-	_ rpc.Module          = (*Service)(nil)
 )

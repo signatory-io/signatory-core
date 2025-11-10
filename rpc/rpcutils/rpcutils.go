@@ -44,7 +44,12 @@ func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpoint
 		return nil, err
 	}
 	l := log.With("address", u.Host)
-
+	l.Debug("Registered methods:")
+	for p, mt := range h.Modules {
+		for m := range mt {
+			l.Debugf("%s/%s\n", p, m)
+		}
+	}
 	switch u.Scheme {
 	case "tcp":
 		tl, err := net.Listen("tcp", u.Host)

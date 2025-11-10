@@ -143,13 +143,18 @@ func NewPrivateKey(key cose.Key) (crypto.PrivateKey, error) {
 		if crv == 0 {
 			return nil, errInvalidPrivateKey
 		}
-		d, okD := key[cose.AttrEC2_D].([]byte)
+		bytes, okD := key[cose.AttrEC2_D].([]byte)
 		if !okD {
 			return nil, errInvalidPublicKey
 		}
+		d := new(big.Int).SetBytes(bytes)
+		curve := ecdsa.Curve(crv)
+		if d.Cmp(curve.N()) >= 0 {
+			return nil, errors.New("invalid private key")
+		}
 		return &ecdsa.PrivateKey{
-			Curve: ecdsa.Curve(crv),
-			D:     new(big.Int).SetBytes(d),
+			Curve: curve,
+			D:     d,
 		}, nil
 
 	default:

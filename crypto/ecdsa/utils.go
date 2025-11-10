@@ -1,10 +1,12 @@
 package ecdsa
 
 import (
+	"encoding/asn1"
 	"errors"
 	"fmt"
 
 	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/signatory-io/signatory-core/crypto/oiddb"
 )
 
 func GenerateRecoveryCode(sig *Signature, pub *PublicKey, digest []byte) (*Signature, error) {
@@ -69,4 +71,24 @@ func Recover(sig *Signature, digest []byte) (*PublicKey, error) {
 		X:     pubkey.X(),
 		Y:     pubkey.Y(),
 	}, nil
+}
+
+func CurveFromOID(oid asn1.ObjectIdentifier) Curve {
+	switch {
+	case oid.Equal(oiddb.P256):
+		return NIST_P256
+	case oid.Equal(oiddb.P384):
+		return NIST_P384
+	case oid.Equal(oiddb.P521):
+		return NIST_P521
+	case oid.Equal(oiddb.Secp256k1):
+		return Secp256k1
+	case oid.Equal(oiddb.BrainpoolP256r1):
+		return BrainpoolP256r1
+	case oid.Equal(oiddb.BrainpoolP384r1):
+		return BrainpoolP384r1
+	case oid.Equal(oiddb.BrainpoolP512r1):
+		return BrainpoolP512r1
+	}
+	return 0
 }

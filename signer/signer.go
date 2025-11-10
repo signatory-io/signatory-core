@@ -10,6 +10,7 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/rpc"
 	"github.com/signatory-io/signatory-core/vault"
+	_ "github.com/signatory-io/signatory-core/vault/preamble"
 )
 
 const (
@@ -146,7 +147,6 @@ func New(vaults iter.Seq2[string, vault.Vault]) *Signer {
 		s.vaults = append(s.vaults, inst)
 		s.vaultIndex[id] = inst
 	}
-
 	return s
 }
 
@@ -161,9 +161,17 @@ func (s *Signer) ListVaults() iter.Seq[VaultInfo] {
 }
 
 func (s *Signer) GetVault(id string) (VaultInfo, error) {
-	v, ok := s.vaultIndex[id]
-	if !ok {
-		return nil, rpc.WrapError(fmt.Errorf("vault instance %s is not found", id), CodeVaultNotFound)
+	var v *vaultInst
+	if id == "" && len(s.vaultIndex) == 1 {
+		// get first
+		for _, v = range s.vaultIndex {
+		}
+	} else {
+		var ok bool
+		v, ok = s.vaultIndex[id]
+		if !ok {
+			return nil, rpc.WrapError(fmt.Errorf("vault instance %s is not found", id), CodeVaultNotFound)
+		}
 	}
 	return v, nil
 }

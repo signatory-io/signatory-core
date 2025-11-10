@@ -177,7 +177,6 @@ func (h *Handler) RegisterModule(path string, object any) {
 	if _, ok := h.Modules[path]; ok {
 		panic(fmt.Sprintf("rpc: path %s is already in use", path))
 	}
-
 	v := reflect.ValueOf(object)
 	if v.Kind() == reflect.Pointer && v.Type().Elem().Kind() == reflect.Interface {
 		v = v.Elem()
@@ -199,17 +198,7 @@ func (h *Handler) RegisterModule(path string, object any) {
 			table[cc.String()] = newMethod(v.Method(i), methodDesc.Name)
 		}
 	}
-}
-
-func (h *Handler) Register(obj Module) { obj.RegisterSelf(h) }
-
-type Registrar interface {
-	RegisterModuleMethodTable(path string, methods MethodTable)
-	RegisterModule(path string, object any)
-}
-
-type Module interface {
-	RegisterSelf(r Registrar)
+	h.Modules[path] = table
 }
 
 func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {

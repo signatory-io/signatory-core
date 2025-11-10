@@ -38,15 +38,7 @@ type confirmation struct {
 	Prompt string `cbor:"0,keyasint,omitempty"`
 }
 
-type rpcAPI interface {
-	ErrorMessage(ctx context.Context, msg string) error
-	Dialog(ctx context.Context, dialog *rpcDialog) (results []any, err error)
-}
-
-func (r Service) RegisterSelf(reg rpc.Registrar) {
-	var api rpcAPI = r
-	reg.RegisterModule("ui", &api)
-}
+const Path = "ui"
 
 func (r Service) ErrorMessage(ctx context.Context, msg string) error {
 	return r.UI.ErrorMessage(ctx, msg)
@@ -179,6 +171,5 @@ func (p Proxy) ErrorMessage(ctx context.Context, msg string) error {
 }
 
 var (
-	_ rpc.Module = Service{}
-	_ ui.UI      = Proxy{}
+	_ ui.UI = Proxy{}
 )

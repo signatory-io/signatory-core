@@ -24,7 +24,8 @@ func New(ctx context.Context, conf *Config, logger logger.Logger) (*Service, err
 	}
 	api := signerapi.API{Signer: signer}
 	handler := rpc.NewHandler()
-	handler.Register(&api)
+	handler.RegisterModule(signerapi.Path, &api)
+
 	l := logger.With("address", conf.RPCAddress)
 	l.Info("Starting utility RPC service")
 	rpc, err := rpcutils.NewRPCService[cbor.Layout](conf.RPCAddress, handler, logger, conf)

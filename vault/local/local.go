@@ -247,11 +247,7 @@ func (l *LocalVault) Ready(ctx context.Context) (bool, error) { return true, nil
 func (l *LocalVault) InstanceInfo() string                    { return fmt.Sprintf("Local/%s", l.storeDir) }
 func (l *LocalVault) Name() string                            { return "local" }
 
-func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vault.SecretManager, options vault.GenerateOptions) (vault.KeyReference, error) {
-	priv, err := keygen.GeneratePrivateKey(alg)
-	if err != nil {
-		return nil, vault.WrapError(l, err)
-	}
+func (l *LocalVault) importKey(ctx context.Context, priv crypto.PrivateKey, sm vault.SecretManager, options vault.GenerateOptions) (vault.KeyReference, error) {
 	signer, ok := priv.(crypto.LocalSigner)
 	if !ok || !signer.IsAvailable() {
 		return nil, vault.WrapError(l, fmt.Errorf("%T has no local implementation", priv))
@@ -265,7 +261,8 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 		if sm == nil {
 			return nil, vault.WrapError(l, errors.New("SecretManager is not specified"))
 		}
-		if secret, err = sm.GetSecret(ctx, pkh, alg, vault.GetSecretHintGenerate); err != nil {
+		var err error
+		if secret, err = sm.GetSecret(ctx, pkh, priv.PrivateKeyType(), vault.GetSecretHintGenerate); err != nil {
 			return nil, vault.WrapError(l, err)
 		}
 	}
@@ -291,9 +288,24 @@ func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vaul
 	return &key, nil
 }
 
+func (l *LocalVault) Generate(ctx context.Context, alg crypto.Algorithm, sm vault.SecretManager, options vault.GenerateOptions) (vault.KeyReference, error) {
+	priv, err := keygen.GeneratePrivateKey(alg)
+	if err != nil {
+		return nil, vault.WrapError(l, err)
+	}
+	return l.importKey(ctx, priv, sm, options)
+}
+
+func (l *LocalVault) Import(ctx context.Context, priv crypto.PrivateKey, sm vault.SecretManager, options vault.GenerateOptions) (vault.KeyReference, error) {
+	return l.importKey(ctx, priv, sm, options)
+}
+
 var (
-	_ vault.Unlocker  = (*localKey)(nil)
-	_ vault.Generator = (*LocalVault)(nil)
+	_ vault.Unlocker = (*localKey)(nil)
+	_ interface {
+		vault.Generator
+		vault.Importer
+	} = (*LocalVault)(nil)
 )
 
 func New(storeDir string) (*LocalVault, error) {

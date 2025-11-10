@@ -3,6 +3,7 @@ package signatorycli
 import (
 	"context"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -10,7 +11,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/signatory-io/signatory-core/crypto"
-	"github.com/signatory-io/signatory-core/crypto/utils"
+	"github.com/signatory-io/signatory-core/crypto/pkcs8"
+	cryptoutils "github.com/signatory-io/signatory-core/crypto/utils"
 	"github.com/signatory-io/signatory-core/rpc"
 	"github.com/signatory-io/signatory-core/rpc/cbor"
 	"github.com/signatory-io/signatory-core/rpc/rpcutils"
@@ -27,7 +29,7 @@ func (r *Config) NewRPC(ctx context.Context) (rpcutils.CallerCloser, error) {
 		UI: &termUI,
 	}
 	handler := rpc.NewHandler()
-	handler.Register(uiSvc)
+	handler.RegisterModule(rpcui.Path, uiSvc)
 	return rpcutils.NewRPCClient[cbor.Layout](ctx, r.RPCEndpoint, handler, r)
 }
 
@@ -58,7 +60,7 @@ func newListVaultsCommand() *cobra.Command {
 			defer r.Close()
 
 			var vaults []api.VaultInfo
-			if err = r.Call(cmd.Context(), &vaults, "sig", "listVaults"); err != nil {
+			if err = r.Call(cmd.Context(), &vaults, "signer", "listVaults"); err != nil {
 				return err
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 4, ' ', 0)
@@ -80,6 +82,7 @@ func newKeyCommand() *cobra.Command {
 		Short: "Keys operations",
 	}
 	cmd.AddCommand(newListKeysCommand())
+	cmd.AddCommand(newImportKeyCommand())
 	cmd.AddCommand(newGenerateKeyCommand())
 	cmd.AddCommand(newUnlockCommand())
 	cmd.AddCommand(newListAlgsCommand())
@@ -118,7 +121,7 @@ func newListKeysCommand() *cobra.Command {
 			defer r.Close()
 
 			var keys []*api.KeyInfo
-			if err = r.Call(cmd.Context(), &keys, "sig", "listKeys", vaultID, algs); err != nil {
+			if err = r.Call(cmd.Context(), &keys, "signer", "listKeys", vaultID, algs); err != nil {
 				return err
 			}
 
@@ -171,33 +174,11 @@ func newGenerateKeyCommand() *cobra.Command {
 			}
 			defer r.Close()
 
-			var key api.KeyInfo
-			if err = r.Call(cmd.Context(), &key, "sig", "generateKey", vaultID, alg, vault.EncryptKey(encrypt)); err != nil {
+			var result api.KeyInfo
+			if err = r.Call(cmd.Context(), &result, "signer", "generateKey", vaultID, alg, vault.EncryptKey(encrypt)); err != nil {
 				return err
 			}
-
-			var locked string
-			if key.Locked {
-				locked = "Yes"
-			} else {
-				locked = "No"
-			}
-			ra := utils.FingerprintRandomArt("", key.PublicKeyHash[:])
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 4, ' ', 0)
-			for i, l := range strings.Split(string(ra), "\n") {
-				if l != "" {
-					if i == 0 {
-						fmt.Fprint(w, "Key's Visualizer:")
-					}
-					fmt.Fprintf(w, "\t%s\n", l)
-				}
-			}
-			fmt.Fprintf(w, "Public Key Hash:\t%v\n", key.PublicKeyHash)
-			fmt.Fprintf(w, "Algorithm:\t%v\n", key.Algorithm)
-			fmt.Fprintf(w, "Vault ID:\t%s\n", key.Vault.ID)
-			fmt.Fprintf(w, "Vault Instance:\t%s\n", key.Vault.InstanceInfo)
-			fmt.Fprintf(w, "Locked:\t%s\n", locked)
-			w.Flush()
+			dumpKeyInfo(&result)
 			return nil
 		},
 	}
@@ -207,10 +188,107 @@ func newGenerateKeyCommand() *cobra.Command {
 	f.StringVarP(&algName, "alg", "a", "", "Algorithm")
 	f.BoolVarP(&encrypt, "encrypt", "E", false, "Encrypt key with a password")
 
-	cmd.MarkFlagRequired("vault")
 	cmd.MarkFlagRequired("alg")
 
 	return &cmd
+}
+
+func newImportKeyCommand() *cobra.Command {
+	var (
+		vaultID string
+		format  string
+		encrypt bool
+		path    string
+	)
+
+	cmd := cobra.Command{
+		Use:   "import [KEY_DATA]",
+		Short: "Import private key",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			var keyData []byte
+			if len(args) != 0 {
+				keyData = []byte(args[0])
+			} else {
+				if keyData, err = os.ReadFile(path); err != nil {
+					return err
+				}
+			}
+			var priv crypto.LocalSigner
+			switch format {
+			case "geth":
+				if priv, err = cryptoutils.ParseGethKey(keyData); err != nil {
+					return err
+				}
+			case "tz":
+				if priv, err = cryptoutils.ParseTezosPrivateKey(keyData); err != nil {
+					return err
+				}
+			case "pkcs8":
+				p, _ := pem.Decode(keyData)
+				if p == nil {
+					return errors.New("failed to parse PEM block")
+				}
+				if priv, err = pkcs8.ParsePrivateKey(p.Bytes); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("unknown key format %s", format)
+			}
+
+			var conf Config
+			conf.Default()
+			if err := conf.FromCmdline(true, cmd.Flags()); err != nil {
+				return err
+			}
+			r, err := conf.NewRPC(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer r.Close()
+
+			var result api.KeyInfo
+			if err = r.Call(cmd.Context(), &result, "signer", "importKey", vaultID, priv.COSE(), vault.EncryptKey(encrypt)); err != nil {
+				return err
+			}
+			dumpKeyInfo(&result)
+			return nil
+		},
+	}
+
+	f := cmd.Flags()
+	f.StringVarP(&vaultID, "vault", "v", "", "Vault ID")
+	f.StringVarP(&format, "format", "f", "pkcs8", "Private key format [pkcs8, geth, tz]")
+	f.StringVarP(&path, "input", "i", "", "Input file")
+	f.BoolVarP(&encrypt, "encrypt", "E", false, "Encrypt key with a password")
+	cmd.MarkFlagFilename("input")
+
+	return &cmd
+}
+
+func dumpKeyInfo(key *api.KeyInfo) {
+	var locked string
+	if key.Locked {
+		locked = "Yes"
+	} else {
+		locked = "No"
+	}
+	ra := cryptoutils.FingerprintRandomArt("", key.PublicKeyHash[:])
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 4, ' ', 0)
+	for i, l := range strings.Split(string(ra), "\n") {
+		if l != "" {
+			if i == 0 {
+				fmt.Fprint(w, "Key's Visualizer:")
+			}
+			fmt.Fprintf(w, "\t%s\n", l)
+		}
+	}
+	fmt.Fprintf(w, "Public Key Hash:\t%v\n", key.PublicKeyHash)
+	fmt.Fprintf(w, "Algorithm:\t%v\n", key.Algorithm)
+	fmt.Fprintf(w, "Vault ID:\t%s\n", key.Vault.ID)
+	fmt.Fprintf(w, "Vault Instance:\t%s\n", key.Vault.InstanceInfo)
+	fmt.Fprintf(w, "Locked:\t%s\n", locked)
+	w.Flush()
 }
 
 func newUnlockCommand() *cobra.Command {
@@ -239,7 +317,7 @@ func newUnlockCommand() *cobra.Command {
 				return err
 			}
 			defer r.Close()
-			return r.Call(cmd.Context(), nil, "sig", "unlockKey", &pkh)
+			return r.Call(cmd.Context(), nil, "signer", "unlockKey", &pkh)
 		},
 	}
 	return &cmd

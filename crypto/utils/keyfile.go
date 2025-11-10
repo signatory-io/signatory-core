@@ -103,6 +103,10 @@ func ReadKeyFile(name string) (*KeyFile, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ParseKeyFile(data)
+}
+
+func ParseKeyFile(data []byte) (*KeyFile, error) {
 	var out KeyFile
 	return &out, cbor.Unmarshal(data, &out)
 }
