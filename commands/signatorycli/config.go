@@ -47,7 +47,7 @@ func (c *Config) RegisterFlags(f *pflag.FlagSet, cmd *cobra.Command) {
 	f.StringP("base-dir", "b", c.BasePath, "Base directory")
 	f.StringP("config-file", "c", core.DefaultConfigFile, "Configuration file path (absolute or relative to the base directory)")
 	f.StringP("rpc-address", "r", c.RPCEndpoint, "RPC endpoint address, format: transport://[host]:port[#identity], where transport is [tcp, secure, http], and identity is a key file for secure connection")
-	f.StringP("log-level", "l", c.LogLevel.String(), "Log level: [error, warn, info, debug, trace]")
+	f.TextVarP(&c.LogLevel, "log-level", "l", c.LogLevel, "Log level: [error, warn, info, debug, trace]")
 
 	cmd.MarkFlagFilename("config-file")
 	cmd.MarkFlagDirname("base-dir")
