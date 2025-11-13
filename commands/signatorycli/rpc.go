@@ -216,6 +216,10 @@ func newImportKeyCommand() *cobra.Command {
 			}
 			var priv crypto.LocalSigner
 			switch format {
+			case "erc2335":
+				if priv, err = cryptoutils.ParseERC2335Key(keyData); err != nil {
+					return err
+				}
 			case "geth":
 				if priv, err = cryptoutils.ParseGethKey(keyData); err != nil {
 					return err
@@ -258,7 +262,7 @@ func newImportKeyCommand() *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVarP(&vaultID, "vault", "v", "", "Vault ID")
-	f.StringVarP(&format, "format", "f", "pkcs8", "Private key format [pkcs8, geth, tz]")
+	f.StringVarP(&format, "format", "f", "pkcs8", "Private key format [pkcs8, geth, tz, keystore]")
 	f.StringVarP(&path, "input", "i", "", "Input file")
 	f.BoolVarP(&encrypt, "encrypt", "E", false, "Encrypt key with a password")
 	cmd.MarkFlagFilename("input")
