@@ -262,7 +262,7 @@ func newImportKeyCommand() *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVarP(&vaultID, "vault", "v", "", "Vault ID")
-	f.StringVarP(&format, "format", "f", "pkcs8", "Private key format [pkcs8, geth, tz, keystore]")
+	f.StringVarP(&format, "format", "f", "pkcs8", "Private key format [pkcs8, geth, tz, erc2335]")
 	f.StringVarP(&path, "input", "i", "", "Input file")
 	f.BoolVarP(&encrypt, "encrypt", "E", false, "Encrypt key with a password")
 	cmd.MarkFlagFilename("input")
