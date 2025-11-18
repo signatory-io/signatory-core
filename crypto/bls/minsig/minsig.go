@@ -1,6 +1,8 @@
 package minsig
 
 import (
+	"encoding/hex"
+
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/bls"
 	"github.com/signatory-io/signatory-core/crypto/cose"
@@ -30,6 +32,7 @@ func (p *PublicKey) COSE() cose.Key {
 		cose.AttrOKP_X:   p[:],
 	}
 }
+func (p *PublicKey) String() string { return hex.EncodeToString(p[:]) }
 
 type PrivateKey [bls.ScalarByteLength]byte
 

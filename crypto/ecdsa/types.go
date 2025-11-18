@@ -1,6 +1,7 @@
 package ecdsa
 
 import (
+	hexenc "encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -71,6 +72,10 @@ func (p *PublicKey) COSE() cose.Key {
 		cose.AttrEC2_X:   xBytes,
 		cose.AttrEC2_Y:   isOdd,
 	}
+}
+
+func (p *PublicKey) String() string {
+	return fmt.Sprintf("%v:%s:%s", p.Curve, hexenc.EncodeToString(p.X.Bytes()), hexenc.EncodeToString(p.Y.Bytes()))
 }
 
 var ErrInvalidPublicKey = errors.New("invalid public key")
