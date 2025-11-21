@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"time"
 
@@ -80,19 +79,27 @@ func genSingle(prk []byte, info []byte, tag string) []byte {
 	return kdf.Sum(nil)
 }
 
+func twoComplementSub(a, b []byte) []byte {
+	if len(a) != len(b) {
+		panic("inconsistent key lengths")
+	}
+	out := make([]byte, len(a))
+	var borrow uint
+	for i := len(a) - 1; i >= 0; i-- {
+		diff := uint(a[i]) - uint(b[i]) - borrow
+		out[i] = byte(diff)
+		borrow = (diff >> 8) & 1
+	}
+	return out
+}
+
 func generateKeys(localEph, remoteEph *ecdh.PublicKey, secret []byte) sessionKeys {
 	// Reinterpret public keys' raw bytes as big endian integers and subtract them.
 	// It just looks a bit more elegant than comparing keys or doing some other branching to decide
 	// who is a "client" and who is a "server" --Eugene
 
-	loc := new(big.Int).SetBytes(localEph.Bytes())
-	rem := new(big.Int).SetBytes(remoteEph.Bytes())
-
-	rDiff := new(big.Int).Sub(loc, rem)
-	wDiff := new(big.Int).Neg(rDiff)
-
-	rBytes := rDiff.Bytes()
-	wBytes := wDiff.Bytes()
+	rBytes := twoComplementSub(localEph.Bytes(), remoteEph.Bytes())
+	wBytes := twoComplementSub(remoteEph.Bytes(), localEph.Bytes())
 
 	prk := blake2b.Sum256(secret)
 
