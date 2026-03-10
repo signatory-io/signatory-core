@@ -70,6 +70,20 @@ func ParseERC2335Key(keyData []byte) (crypto.LocalSigner, error) {
 	return decryptERC2335Key(&keystore, password, true)
 }
 
+// ParseERC2335KeyWithPassword parses and decrypts an ERC-2335 keystore with the provided password.
+func ParseERC2335KeyWithPassword(keyData, password []byte) (crypto.LocalSigner, error) {
+	var keystore ERC2335Keystore
+	if err := parseERC2335JSON(keyData, &keystore); err != nil {
+		return nil, err
+	}
+
+	if keystore.Version != 4 {
+		return nil, fmt.Errorf("unsupported keystore version: %d", keystore.Version)
+	}
+
+	return decryptERC2335Key(&keystore, password, true)
+}
+
 func parseERC2335JSON(data []byte, keystore *ERC2335Keystore) error {
 	if err := json.Unmarshal(data, keystore); err != nil {
 		return fmt.Errorf("failed to parse ERC-2335 keystore: %w", err)
