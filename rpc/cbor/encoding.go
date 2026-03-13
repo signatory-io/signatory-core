@@ -110,4 +110,8 @@ func (Layout) NewResponse(id uint64, r *rpc.Response[codec.CBOR]) Message {
 	}
 }
 
+func (l Layout) NewResponseFrom(original Message, r *rpc.Response[codec.CBOR]) Message {
+	return l.NewResponse(original.ID, r)
+}
+
 func (Layout) Codec() codec.CBOR { return codec.CBOR{} }

@@ -71,8 +71,7 @@ func (h *HTTPHandler[L, C, M]) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 
 	var layout L
-	id := msg.GetID()
-	responseMsg := layout.NewResponse(id, res)
+	responseMsg := layout.NewResponseFrom(msg, res)
 	buf, err := codec.Marshal(&responseMsg)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

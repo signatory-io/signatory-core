@@ -7,6 +7,7 @@ import (
 type Layout[C codec.Codec, M Message[C]] interface {
 	NewRequest(id uint64, r *Request) M
 	NewResponse(id uint64, r *Response[C]) M
+	NewResponseFrom(original M, r *Response[C]) M
 	Codec() C
 }
 
