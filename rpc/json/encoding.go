@@ -135,10 +135,10 @@ func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
 
 var null = json.RawMessage("null")
 
-func (Layout) NewResponse(id uint64, r *rpc.Response[codec.JSON]) Message {
+func (l Layout) NewResponseFrom(original Message, r *rpc.Response[codec.JSON]) Message {
 	msg := Message{
 		Version: Version,
-		ID:      NewFlexibleID(id),
+		ID:      original.ID,
 	}
 	if e := r.Error; e != nil {
 		msg.Error = &Error{
@@ -156,10 +156,8 @@ func (Layout) NewResponse(id uint64, r *rpc.Response[codec.JSON]) Message {
 	return msg
 }
 
-func (l Layout) NewResponseFrom(original Message, r *rpc.Response[codec.JSON]) Message {
-	msg := l.NewResponse(original.GetID(), r)
-	msg.ID = original.ID
-	return msg
+func (l Layout) NewResponse(id uint64, r *rpc.Response[codec.JSON]) Message {
+	return l.NewResponseFrom(Message{ID: NewFlexibleID(id)}, r)
 }
 
 func (Layout) Codec() codec.JSON { return codec.JSON{} }
