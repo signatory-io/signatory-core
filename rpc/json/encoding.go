@@ -2,7 +2,7 @@ package json
 
 import (
 	"encoding/json"
-	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 
@@ -33,9 +33,12 @@ func (f *FlexibleID) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &s); err == nil {
 		if n, err := strconv.ParseUint(s, 10, 64); err == nil {
 			f.value = n
-			return nil
+		} else {
+			h := fnv.New64a()
+			h.Write([]byte(s))
+			f.value = h.Sum64()
 		}
-		return fmt.Errorf("non-numeric string id: %q", s)
+		return nil
 	}
 	return nil
 }

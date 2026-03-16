@@ -66,12 +66,28 @@ func TestParseInvalidResponse(t *testing.T) {
 }
 
 func TestStringIDPreserved(t *testing.T) {
-	src := []byte(`{"jsonrpc":"2.0","id":"42","method":"eth_sign","params":["0xdeadbeef"]}`)
+	src := []byte(`{"jsonrpc":"2.0","id":"abc-123","method":"eth_sign","params":["0xdeadbeef"]}`)
 	var m Message
 	err := json.Unmarshal(src, &m)
 	require.NoError(t, err)
 	require.True(t, m.IsValid())
 	require.NotNil(t, m.GetRequest())
+	require.NotZero(t, m.GetID())
+
+	var l Layout
+	resp := l.NewResponseFrom(m, &rpc.Response[codec.JSON]{
+		Result: []byte("\"0xsignature\""),
+	})
+	buf, err := json.Marshal(&resp)
+	require.NoError(t, err)
+	require.Equal(t, []byte(`{"jsonrpc":"2.0","id":"abc-123","result":"0xsignature"}`), buf)
+}
+
+func TestNumericStringIDPreserved(t *testing.T) {
+	src := []byte(`{"jsonrpc":"2.0","id":"42","method":"eth_sign","params":["0xdeadbeef"]}`)
+	var m Message
+	err := json.Unmarshal(src, &m)
+	require.NoError(t, err)
 	require.Equal(t, uint64(42), m.GetID())
 
 	var l Layout
