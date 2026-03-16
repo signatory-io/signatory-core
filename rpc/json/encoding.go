@@ -2,15 +2,57 @@ package json
 
 import (
 	"encoding/json"
+	"hash/fnv"
+	"strconv"
 	"strings"
 
 	"github.com/signatory-io/signatory-core/rpc"
 	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 )
 
+// FlexibleID handles JSON-RPC id field which can be string, number, or null per spec.
+type FlexibleID struct {
+	value uint64
+	raw   json.RawMessage
+}
+
+func NewFlexibleID(n uint64) FlexibleID {
+	return FlexibleID{value: n}
+}
+
+func (f FlexibleID) Value() uint64 { return f.value }
+
+func (f *FlexibleID) UnmarshalJSON(data []byte) error {
+	f.raw = append(f.raw[:0], data...)
+	var n uint64
+	if err := json.Unmarshal(data, &n); err == nil {
+		f.value = n
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		if n, err := strconv.ParseUint(s, 10, 64); err == nil {
+			f.value = n
+		} else {
+			h := fnv.New64a()
+			h.Write([]byte(s))
+			f.value = h.Sum64()
+		}
+		return nil
+	}
+	return nil
+}
+
+func (f FlexibleID) MarshalJSON() ([]byte, error) {
+	if len(f.raw) > 0 {
+		return f.raw, nil
+	}
+	return json.Marshal(f.value)
+}
+
 type Message struct {
 	Version    string            `json:"jsonrpc"`
-	ID         uint64            `json:"id"`
+	ID         FlexibleID        `json:"id"`
 	Method     string            `json:"method,omitempty"`
 	Parameters []json.RawMessage `json:"params,omitempty"`
 	Result     json.RawMessage   `json:"result,omitempty"`
@@ -32,7 +74,7 @@ func (m Message) IsValid() bool {
 			m.Method == "" && m.Result == nil && m.Error != nil)
 }
 
-func (m Message) GetID() uint64 { return m.ID }
+func (m Message) GetID() uint64 { return m.ID.Value() }
 
 func (m Message) GetRequest() *rpc.Request {
 	if m.Method != "" {
@@ -88,7 +130,7 @@ func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
 	}
 	return Message{
 		Version:    Version,
-		ID:         id,
+		ID:         NewFlexibleID(id),
 		Method:     strings.Join(r.Path, "") + "_" + r.Method,
 		Parameters: par,
 	}
@@ -96,10 +138,10 @@ func (Layout) NewRequest(id uint64, r *rpc.Request) Message {
 
 var null = json.RawMessage("null")
 
-func (Layout) NewResponse(id uint64, r *rpc.Response[codec.JSON]) Message {
+func (l Layout) NewResponseFrom(original Message, r *rpc.Response[codec.JSON]) Message {
 	msg := Message{
 		Version: Version,
-		ID:      id,
+		ID:      original.ID,
 	}
 	if e := r.Error; e != nil {
 		msg.Error = &Error{
@@ -115,6 +157,10 @@ func (Layout) NewResponse(id uint64, r *rpc.Response[codec.JSON]) Message {
 		}
 	}
 	return msg
+}
+
+func (l Layout) NewResponse(id uint64, r *rpc.Response[codec.JSON]) Message {
+	return l.NewResponseFrom(Message{ID: NewFlexibleID(id)}, r)
 }
 
 func (Layout) Codec() codec.JSON { return codec.JSON{} }

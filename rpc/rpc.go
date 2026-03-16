@@ -334,13 +334,11 @@ func New[L Layout[C, M], C codec.Codec, M Message[C], T conn.EncodedConn[C]](con
 					if h != nil {
 						handlersWG.Add(1)
 						go func() {
-							id := m.GetID()
 							ctx := mkCallCtx(handlersCtx, conn, rpc)
 							res, err := handleCall[C](h, ctx, req)
 							if err == nil {
-								// all errors except ErrCanceled are returned back
 								var layout L
-								responseMsg := layout.NewResponse(id, res)
+								responseMsg := layout.NewResponseFrom(m, res)
 								out <- responseMsg
 							}
 							handlersWG.Done()
