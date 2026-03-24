@@ -1,6 +1,7 @@
 package vsock
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -148,6 +149,77 @@ func Dial(addr *Addr) (conn *Conn, err error) {
 	if err != nil {
 		return nil, wrapErr(err, "dial", nil, addr)
 	}
+	return newConn(fd, pn)
+}
+
+func DialContext(ctx context.Context, addr *Addr) (conn *Conn, err error) {
+	fd, err := newUnbound()
+	if err != nil {
+		return nil, wrapErr(err, "dial", nil, addr)
+	}
+	defer func() {
+		if err != nil {
+			fd.Close()
+		}
+	}()
+
+	if deadline, ok := ctx.Deadline(); ok {
+		fd.SetDeadline(deadline)
+	}
+
+	// Cancel pending I/O when context is done
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			fd.SetDeadline(time.Now())
+		case <-done:
+		}
+	}()
+
+	switch err := unix.Connect(int(fd.Fd()), addr.sockaddr()); err {
+	case unix.EINPROGRESS:
+	case nil:
+		fd.SetDeadline(time.Time{})
+		return newConn(fd, nil)
+	default:
+		if ctx.Err() != nil {
+			return nil, wrapErr(ctx.Err(), "dial", nil, addr)
+		}
+		return nil, wrapErr(err, "dial", nil, addr)
+	}
+
+	raw, err := fd.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+
+	var pn unix.Sockaddr
+	if poll_err := raw.Write(func(fd uintptr) bool {
+		var val int
+		val, err = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_ERROR)
+		if err == nil && val != 0 {
+			err = unix.Errno(val)
+		}
+		if err != nil {
+			return true
+		}
+		pn, err = unix.Getpeername(int(fd))
+		return err == nil || err != unix.ENOTCONN
+	}); poll_err != nil {
+		if ctx.Err() != nil {
+			return nil, wrapErr(ctx.Err(), "dial", nil, addr)
+		}
+		return nil, wrapErr(poll_err, "dial", nil, addr)
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, wrapErr(ctx.Err(), "dial", nil, addr)
+		}
+		return nil, wrapErr(err, "dial", nil, addr)
+	}
+	fd.SetDeadline(time.Time{})
 	return newConn(fd, pn)
 }
 

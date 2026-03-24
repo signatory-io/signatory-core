@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/ecdsa"
@@ -18,7 +19,6 @@ import (
 )
 
 const (
-	DefaultCID  = 16
 	DefaultPort = 2000
 	defaultFile = "enclave_keys.json"
 )
@@ -131,10 +131,10 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 		return nil, errors.New("missing credentials")
 	}
 
-	cid := config.EnclaveCID
-	if cid == 0 {
-		cid = DefaultCID
+	if config.EnclaveCID == 0 {
+		return nil, errors.New("enclave_cid is required")
 	}
+	cid := config.EnclaveCID
 	port := config.EnclavePort
 	if port == 0 {
 		port = DefaultPort
@@ -142,15 +142,20 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 
 	addr := vsock.Addr{CID: cid, Port: port}
 	slog.Info("Nitro: connecting to enclave signer", "addr", &addr)
-	conn, err := vsock.Dial(&addr)
+
+	dialCtx, dialCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer dialCancel()
+	conn, err := vsock.DialContext(dialCtx, &addr)
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("Nitro: connected to enclave signer")
 
 	client := rpc.NewClient[rpc.AWSCredentials](conn)
 	if err := client.Initialize(ctx, rpcCred); err != nil {
 		return nil, err
 	}
+	slog.Info("Nitro: enclave initialized")
 
 	r, err := storage.GetKeys(ctx)
 	if err != nil {
@@ -159,7 +164,7 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 
 	var keys []*nitroKey
 	for k := range r.Result() {
-		slog.Debug("Loading encrypted key", "pkh", k.PublicKeyHash)
+		slog.Debug("Nitro: loading encrypted key", "pkh", k.PublicKeyHash)
 		res, err := client.Load(ctx, k.EncryptedPrivateKey)
 		if err != nil {
 			return nil, err
@@ -173,6 +178,7 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 			handle: res.Handle,
 		})
 	}
+	slog.Info("Nitro: vault ready", "keys", len(keys))
 
 	return &NitroVault{
 		client:  client,
