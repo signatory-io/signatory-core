@@ -4,19 +4,20 @@ import (
 	"context"
 	"encoding/binary"
 	"io"
-	"log/slog"
 	"net"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/signatory-io/signatory-core/logger"
 )
 
 type Client[C any] struct {
 	conn net.Conn
+	log  logger.Logger
 }
 
-func NewClient[C any](conn net.Conn) *Client[C] {
-	return &Client[C]{conn: conn}
+func NewClient[C any](conn net.Conn, log logger.Logger) *Client[C] {
+	return &Client[C]{conn: conn, log: log}
 }
 
 func (c *Client[C]) Close() error {
@@ -25,13 +26,15 @@ func (c *Client[C]) Close() error {
 
 var aLongTimeAgo = time.Unix(1, 0)
 
-func RoundTripRaw[T, C any](ctx context.Context, conn net.Conn, req *Request[C]) (r T, err error) {
+func RoundTripRaw[T, C any](ctx context.Context, conn net.Conn, log logger.Logger, req *Request[C]) (r T, err error) {
 	var res T
 	reqBuf, err := cbor.Marshal(req)
 	if err != nil {
 		return res, err
 	}
-	slog.Debug("nitro rpc request", "type", reqType(req))
+	if log != nil {
+		log.With("type", reqType(req)).Debug("nitro rpc request")
+	}
 
 	intErr := make(chan error)
 	done := make(chan struct{})
@@ -73,12 +76,12 @@ func RoundTripRaw[T, C any](ctx context.Context, conn net.Conn, req *Request[C])
 	return res, err
 }
 
-func RoundTrip[T, C any](ctx context.Context, conn net.Conn, req *Request[C]) (r Result[*T], err error) {
-	return RoundTripRaw[Result[*T]](ctx, conn, req)
+func RoundTrip[T, C any](ctx context.Context, conn net.Conn, log logger.Logger, req *Request[C]) (r Result[*T], err error) {
+	return RoundTripRaw[Result[*T]](ctx, conn, log, req)
 }
 
 func (c *Client[C]) Initialize(ctx context.Context, cred *C) error {
-	res, err := RoundTrip[struct{}](ctx, c.conn, &Request[C]{Initialize: cred})
+	res, err := RoundTrip[struct{}](ctx, c.conn, c.log, &Request[C]{Initialize: cred})
 	if err != nil {
 		return err
 	}
@@ -86,7 +89,7 @@ func (c *Client[C]) Initialize(ctx context.Context, cred *C) error {
 }
 
 func (c *Client[C]) Load(ctx context.Context, keyData []byte) (*LoadResult, error) {
-	res, err := RoundTrip[LoadResult](ctx, c.conn, &Request[C]{Import: keyData})
+	res, err := RoundTrip[LoadResult](ctx, c.conn, c.log, &Request[C]{Import: keyData})
 	if err == nil && res.Error() != nil {
 		err = res.Error()
 	}
@@ -97,7 +100,7 @@ func (c *Client[C]) Load(ctx context.Context, keyData []byte) (*LoadResult, erro
 }
 
 func (c *Client[C]) Import(ctx context.Context, priv *PrivateKey) (*ImportResult, error) {
-	res, err := RoundTrip[ImportResult](ctx, c.conn, &Request[C]{ImportUnencrypted: priv})
+	res, err := RoundTrip[ImportResult](ctx, c.conn, c.log, &Request[C]{ImportUnencrypted: priv})
 	if err == nil && res.Error() != nil {
 		err = res.Error()
 	}
@@ -108,7 +111,7 @@ func (c *Client[C]) Import(ctx context.Context, priv *PrivateKey) (*ImportResult
 }
 
 func (c *Client[C]) Generate(ctx context.Context, keyType KeyType) (*GenerateResult, error) {
-	res, err := RoundTrip[GenerateResult](ctx, c.conn, &Request[C]{Generate: &keyType})
+	res, err := RoundTrip[GenerateResult](ctx, c.conn, c.log, &Request[C]{Generate: &keyType})
 	if err == nil && res.Error() != nil {
 		err = res.Error()
 	}
@@ -119,7 +122,7 @@ func (c *Client[C]) Generate(ctx context.Context, keyType KeyType) (*GenerateRes
 }
 
 func (c *Client[C]) SignDigest(ctx context.Context, handle uint64, digest []byte) (*RPCSignature, error) {
-	res, err := RoundTrip[RPCSignature](ctx, c.conn, &Request[C]{
+	res, err := RoundTrip[RPCSignature](ctx, c.conn, c.log, &Request[C]{
 		Sign: &SignRequest{Handle: handle, Message: digest},
 	})
 	if err == nil && res.Error() != nil {

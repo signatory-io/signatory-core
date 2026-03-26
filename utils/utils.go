@@ -8,10 +8,12 @@ import (
 
 	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/logger"
 )
 
 type GlobalOptions interface {
 	GetBasePath() string
+	GetLogger() logger.Logger
 }
 
 func GetPath(path string, g GlobalOptions) string {

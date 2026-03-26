@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 
@@ -32,6 +33,16 @@ func (c *remoteAddr) RemoteAddr() net.Addr {
 }
 
 func (h *HTTPHandler[L, C, M]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if v := recover(); v != nil {
+			if log := h.h.Log; log != nil {
+				log.With("error", v).Warn("http: panic serving request")
+				log.WithFields(map[string]any{"error": v, "stack": string(debug.Stack())}).Debug("http: panic stack trace")
+			}
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		}
+	}()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

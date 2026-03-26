@@ -7,6 +7,7 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/cose"
 	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
+	"github.com/signatory-io/signatory-core/logger"
 	"github.com/signatory-io/signatory-core/rpc"
 	uirpc "github.com/signatory-io/signatory-core/rpc/ui"
 	"github.com/signatory-io/signatory-core/signer"
@@ -22,6 +23,7 @@ const (
 
 type API struct {
 	Signer *signer.Signer
+	Log    logger.Logger
 }
 
 const Path = "signer"
@@ -63,6 +65,7 @@ func (s *API) ListVaults() (infos []VaultInfo, err error) {
 }
 
 func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
+	s.Log.WithFields(map[string]any{"vault": vaultID, "algorithm": alg}).Info("generating key")
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -98,10 +101,16 @@ func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algori
 	if u, ok := key.(vault.Unlocker); ok {
 		keyInfo.Locked = u.IsLocked()
 	}
+	genAttrs := map[string]any{"vault": vaultID, "algorithm": alg, "pkh": keyInfo.PublicKeyHash}
+	if addr := crypto.KeyIdentity(pub); addr != "" {
+		genAttrs["address"] = addr
+	}
+	s.Log.WithFields(genAttrs).Info("key generated")
 	return &keyInfo, nil
 }
 
 func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, options vault.EncryptKey) (*KeyInfo, error) {
+	s.Log.With("vault", vaultID).Info("importing key")
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -141,6 +150,11 @@ func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, opt
 	if u, ok := key.(vault.Unlocker); ok {
 		keyInfo.Locked = u.IsLocked()
 	}
+	impAttrs := map[string]any{"vault": vaultID, "pkh": keyInfo.PublicKeyHash}
+	if addr := crypto.KeyIdentity(pub); addr != "" {
+		impAttrs["address"] = addr
+	}
+	s.Log.WithFields(impAttrs).Info("key imported")
 	return &keyInfo, nil
 }
 

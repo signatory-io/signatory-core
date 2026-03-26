@@ -20,6 +20,7 @@ type Config struct {
 	RPCAddress string                   `yaml:"rpc_address"` // transport://[host]:port[#identity], where transport is [tcp, secure, http], and identity is a key file for secure connection
 	LogLevel   logger.Level             `yaml:"log_level"`
 	Vaults     map[string]*vault.Config `yaml:"vaults,omitempty"`
+	Log        logger.Logger            `yaml:"-"`
 }
 
 type CoreConfig interface {
@@ -38,6 +39,8 @@ func (c *Config) GetRPCAddress() string                       { return c.RPCAddr
 func (c *Config) SetRPCAddress(address string)                { c.RPCAddress = address }
 func (c *Config) GetVaults() iter.Seq2[string, *vault.Config] { return maps.All(c.Vaults) }
 func (c *Config) SetLogLevel(level logger.Level)              { c.LogLevel = level }
+func (c *Config) GetLogger() logger.Logger                    { return c.Log }
+func (c *Config) SetLogger(l logger.Logger)                   { c.Log = l }
 
 func LoadConfig[T any](conf T, path string) error {
 	buf, err := os.ReadFile(path)

@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/signatory-io/signatory-core/crypto/ed25519"
+	"github.com/signatory-io/signatory-core/logger"
 	"github.com/signatory-io/signatory-core/rpc/conn"
 	"github.com/signatory-io/signatory-core/rpc/conn/codec"
 	"github.com/signatory-io/signatory-core/rpc/conn/secure"
@@ -162,6 +163,7 @@ type MethodTable map[string]*Method
 
 type Handler struct {
 	Modules map[string]MethodTable
+	Log     logger.Logger
 }
 
 func NewHandler() *Handler { return &Handler{Modules: map[string]MethodTable{}} }
@@ -203,6 +205,9 @@ func (h *Handler) RegisterModule(path string, object any) {
 
 func handleCall[C codec.Codec](h *Handler, ctx context.Context, req *Request) (*Response[C], error) {
 	p := strings.Join(req.Path, "/")
+	if h.Log != nil {
+		h.Log.WithFields(map[string]any{"path": p, "method": req.Method}).Debug("rpc call")
+	}
 	table, ok := h.Modules[p]
 	if !ok {
 		return mkErrorResponse[C](fmt.Errorf("object path `%s' is not found", p), CodeModuleNotFound), nil
