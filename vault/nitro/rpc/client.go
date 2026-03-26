@@ -123,7 +123,7 @@ func (c *Client[C]) Generate(ctx context.Context, keyType KeyType) (*GenerateRes
 
 func (c *Client[C]) SignDigest(ctx context.Context, handle uint64, digest []byte) (*RPCSignature, error) {
 	res, err := RoundTrip[RPCSignature](ctx, c.conn, c.log, &Request[C]{
-		Sign: &SignRequest{Handle: handle, Message: digest},
+		SignDigest: &SignDigestRequest{Handle: handle, Digest: digest},
 	})
 	if err == nil && res.Error() != nil {
 		err = res.Error()
@@ -146,6 +146,8 @@ func reqType[C any](req *Request[C]) string {
 		return "Generate"
 	case req.Sign != nil:
 		return "Sign"
+	case req.SignDigest != nil:
+		return "SignDigest"
 	default:
 		return "unknown"
 	}

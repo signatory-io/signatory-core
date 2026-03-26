@@ -84,12 +84,18 @@ type SignRequest struct {
 	Version uint8  `cbor:"version"`
 }
 
+type SignDigestRequest struct {
+	Handle uint64 `cbor:"handle"`
+	Digest []byte `cbor:"digest"`
+}
+
 type Request[C any] struct {
-	Initialize        *C           `cbor:"Initialize,omitempty"`
-	Import            []byte       `cbor:"Import,omitempty"`
-	ImportUnencrypted *PrivateKey  `cbor:"ImportUnencrypted,omitempty"`
-	Generate          *KeyType     `cbor:"Generate,omitempty"`
-	Sign              *SignRequest `cbor:"Sign,omitempty"`
+	Initialize        *C                 `cbor:"Initialize,omitempty"`
+	Import            []byte             `cbor:"Import,omitempty"`
+	ImportUnencrypted *PrivateKey        `cbor:"ImportUnencrypted,omitempty"`
+	Generate          *KeyType           `cbor:"Generate,omitempty"`
+	Sign              *SignRequest       `cbor:"Sign,omitempty"`
+	SignDigest        *SignDigestRequest `cbor:"SignDigest,omitempty"`
 }
 
 // AlgorithmData is the CBOR tagged-union wire format used by the TEE signer
