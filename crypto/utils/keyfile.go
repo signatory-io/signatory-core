@@ -32,6 +32,23 @@ type KeyFile struct {
 }
 
 func (k *KeyFile) IsEncrypted() bool { return k.PrivateKey == nil }
+
+func (k *KeyFile) EncryptedData() []byte {
+	if k.EncryptedPrivateKey != nil {
+		return k.EncryptedPrivateKey.Data
+	}
+	return nil
+}
+
+func NewOpaqueKeyFile(pub cose.Key, data []byte) *KeyFile {
+	return &KeyFile{
+		EncryptedPrivateKey: &encryptedPrivateKey{
+			PublicKey: pub,
+			Data:      data,
+		},
+	}
+}
+
 func (k *KeyFile) Public() (crypto.PublicKey, error) {
 	if k.PrivateKey != nil {
 		return cosekey.NewPublicKey(k.PrivateKey)

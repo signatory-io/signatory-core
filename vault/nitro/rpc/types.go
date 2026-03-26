@@ -214,6 +214,9 @@ type RPCError struct {
 }
 
 func (e *RPCError) Error() string {
+	if e.Source != nil {
+		return fmt.Sprintf("%s: %s", e.Message, e.Source.Error())
+	}
 	return e.Message
 }
 

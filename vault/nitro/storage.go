@@ -3,91 +3,69 @@ package nitro
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"iter"
 	"os"
-	"slices"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/signatory-io/signatory-core/crypto"
+	cryptoutils "github.com/signatory-io/signatory-core/crypto/utils"
 )
 
-type encryptedKey struct {
-	PublicKeyHash       string `json:"public_key_hash"`
-	EncryptedPrivateKey []byte `json:"encrypted_private_key"`
-	Algorithm           string `json:"algorithm"`
+type storedKey struct {
+	pub  crypto.PublicKey
+	data []byte
 }
 
-func newEncryptedKey(pub crypto.PublicKey, blob []byte) *encryptedKey {
-	pkh := crypto.NewPublicKeyHash(pub)
-	return &encryptedKey{
-		PublicKeyHash:       hex.EncodeToString(pkh[:]),
-		EncryptedPrivateKey: blob,
-		Algorithm:           pub.PublicKeyType().Short(),
-	}
+type keyStorage interface {
+	GetKeys(ctx context.Context) ([]*storedKey, error)
+	ImportKey(ctx context.Context, pub crypto.PublicKey, data []byte) error
 }
 
-type keyBlobResult struct {
-	keys []*encryptedKey
+type dirStorage struct {
+	dir string
+	mtx sync.RWMutex
 }
 
-func (r *keyBlobResult) Err() error                      { return nil }
-func (r *keyBlobResult) Result() iter.Seq[*encryptedKey] { return slices.Values(r.keys) }
-
-type keyBlobStorage interface {
-	GetKeys(ctx context.Context) (*keyBlobResult, error)
-	ImportKey(ctx context.Context, key *encryptedKey) error
-}
-
-type fileStorage struct {
-	path string
-	mtx  sync.RWMutex
-	keys []*encryptedKey
-}
-
-func newFileStorage(path string) (*fileStorage, error) {
-	buf, err := os.ReadFile(path)
-	if err != nil || len(buf) == 0 {
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-		return &fileStorage{
-			path: path,
-			keys: make([]*encryptedKey, 0),
-		}, nil
-	}
-
-	var keys []*encryptedKey
-	if err = json.Unmarshal(buf, &keys); err != nil {
+func newDirStorage(dir string) (*dirStorage, error) {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	return &fileStorage{
-		path: path,
-		keys: keys,
-	}, nil
+	return &dirStorage{dir: dir}, nil
 }
 
-func (f *fileStorage) GetKeys(ctx context.Context) (*keyBlobResult, error) {
-	f.mtx.RLock()
-	defer f.mtx.RUnlock()
-	return &keyBlobResult{keys: f.keys}, nil
-}
+func (d *dirStorage) GetKeys(_ context.Context) ([]*storedKey, error) {
+	d.mtx.RLock()
+	defer d.mtx.RUnlock()
 
-func (f *fileStorage) ImportKey(ctx context.Context, key *encryptedKey) error {
-	f.mtx.Lock()
-	defer f.mtx.Unlock()
-
-	f.keys = append(f.keys, key)
-
-	data, err := json.MarshalIndent(f.keys, "", "    ")
+	entries, err := os.ReadDir(d.dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var keys []*storedKey
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || strings.HasSuffix(entry.Name(), "_tmp") {
+			continue
+		}
+		kf, err := cryptoutils.ReadKeyFile(filepath.Join(d.dir, entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		pub, err := kf.Public()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, &storedKey{pub: pub, data: kf.EncryptedData()})
+	}
+	return keys, nil
+}
 
-	tmp := f.path + "_tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, f.path)
+func (d *dirStorage) ImportKey(_ context.Context, pub crypto.PublicKey, data []byte) error {
+	d.mtx.Lock()
+	defer d.mtx.Unlock()
+
+	kf := cryptoutils.NewOpaqueKeyFile(pub.COSE(), data)
+	pkh := crypto.NewPublicKeyHash(pub)
+	name := filepath.Join(d.dir, hex.EncodeToString(pkh[:]))
+	return cryptoutils.WriteKeyFile(name, "_tmp", kf, 0600)
 }

@@ -3,14 +3,15 @@ package nitro
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
-	"log/slog"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/ecdsa"
+	"github.com/signatory-io/signatory-core/logger"
 	"github.com/signatory-io/signatory-core/utils"
 	awsutils "github.com/signatory-io/signatory-core/utils/aws"
 	"github.com/signatory-io/signatory-core/vault"
@@ -20,7 +21,7 @@ import (
 
 const (
 	DefaultPort = 2000
-	defaultFile = "enclave_keys.json"
+	defaultDir  = "enclave_keys"
 )
 
 type Config struct {
@@ -35,8 +36,9 @@ type Credentials = awsutils.Config
 
 type NitroVault struct {
 	client  *rpc.Client[rpc.AWSCredentials]
-	storage keyBlobStorage
+	storage keyStorage
 	keys    []*nitroKey
+	log     logger.Logger
 	mtx     sync.Mutex
 }
 
@@ -102,14 +104,16 @@ func (r *nitroKeyRef) SignDigest(ctx context.Context, digest []byte, _ vault.Sec
 }
 
 func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVault, error) {
+	log := opt.GetLogger()
+
 	storagePath := config.StoragePath
 	if storagePath == "" {
-		storagePath = filepath.Join(opt.GetBasePath(), defaultFile)
+		storagePath = filepath.Join(opt.GetBasePath(), defaultDir)
 	} else if !filepath.IsAbs(storagePath) {
 		storagePath = filepath.Join(opt.GetBasePath(), storagePath)
 	}
 
-	storage, err := newFileStorage(storagePath)
+	storage, err := newDirStorage(storagePath)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +134,6 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 	if !rpcCred.IsValid() {
 		return nil, errors.New("missing credentials")
 	}
-
 	if config.EnclaveCID == 0 {
 		return nil, errors.New("enclave_cid is required")
 	}
@@ -141,49 +144,61 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 	}
 
 	addr := vsock.Addr{CID: cid, Port: port}
-	slog.Info("Nitro: connecting to enclave signer", "addr", &addr)
+	if log != nil {
+		log.With("addr", &addr).Info("Nitro: connecting to enclave signer")
+	}
 
 	dialCtx, dialCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer dialCancel()
 	conn, err := vsock.DialContext(dialCtx, &addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(Nitro Enclave): dial %s: %w", &addr, err)
 	}
-	slog.Info("Nitro: connected to enclave signer")
+	if log != nil {
+		log.Info("Nitro: connected to enclave signer")
+	}
 
-	client := rpc.NewClient[rpc.AWSCredentials](conn)
+	client := rpc.NewClient[rpc.AWSCredentials](conn, log)
 	if err := client.Initialize(ctx, rpcCred); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(Nitro Enclave): initialize: %w", err)
 	}
-	slog.Info("Nitro: enclave initialized")
+	if log != nil {
+		log.Info("Nitro: enclave initialized")
+	}
 
-	r, err := storage.GetKeys(ctx)
+	stored, err := storage.GetKeys(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("(Nitro Enclave): load key storage: %w", err)
 	}
 
 	var keys []*nitroKey
-	for k := range r.Result() {
-		slog.Debug("Nitro: loading encrypted key", "pkh", k.PublicKeyHash)
-		res, err := client.Load(ctx, k.EncryptedPrivateKey)
+	for _, k := range stored {
+		pkh := crypto.NewPublicKeyHash(k.pub)
+		if log != nil {
+			log.WithFields(keyLogFields(k.pub, pkh)).Debug("Nitro: loading encrypted key")
+		}
+		res, err := client.Load(ctx, k.data)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("(Nitro Enclave): load key %s: %w", pkh, err)
 		}
 		p, err := res.PublicKey.PublicKey()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("(Nitro Enclave): parse public key %s: %w", pkh, err)
 		}
 		keys = append(keys, &nitroKey{
 			pub:    p,
 			handle: res.Handle,
 		})
 	}
-	slog.Info("Nitro: vault ready", "keys", len(keys))
+	if log != nil {
+		log.With("keys", len(keys)).Info("Nitro: vault ready")
+	}
 
 	return &NitroVault{
 		client:  client,
 		storage: storage,
 		keys:    keys,
+		log:     log,
 	}, nil
 }
 
@@ -231,6 +246,9 @@ func (v *NitroVault) List(ctx context.Context, filter []crypto.Algorithm) vault.
 }
 
 func (v *NitroVault) Generate(ctx context.Context, alg crypto.Algorithm, _ vault.SecretManager, _ vault.GenerateOptions) (vault.KeyReference, error) {
+	if v.log != nil {
+		v.log.With("algorithm", alg).Info("Nitro: generating key")
+	}
 	kt, err := rpc.KeyTypeFromAlgorithm(alg)
 	if err != nil {
 		return nil, vault.WrapError(v, err)
@@ -248,7 +266,7 @@ func (v *NitroVault) Generate(ctx context.Context, alg crypto.Algorithm, _ vault
 		return nil, vault.WrapError(v, err)
 	}
 
-	if err := v.storage.ImportKey(ctx, newEncryptedKey(p, genRes.EncryptedPrivateKey)); err != nil {
+	if err := v.storage.ImportKey(ctx, p, genRes.EncryptedPrivateKey); err != nil {
 		return nil, vault.WrapError(v, err)
 	}
 
@@ -263,10 +281,17 @@ func (v *NitroVault) Generate(ctx context.Context, alg crypto.Algorithm, _ vault
 	}
 	v.keys = append(v.keys, key)
 
+	pkh := crypto.NewPublicKeyHash(p)
+	if v.log != nil {
+		v.log.WithFields(keyLogFields(p, pkh)).Info("Nitro: key generated")
+	}
 	return &nitroKeyRef{nitroKey: key, v: v}, nil
 }
 
 func (v *NitroVault) Import(ctx context.Context, priv crypto.PrivateKey, _ vault.SecretManager, _ vault.GenerateOptions) (vault.KeyReference, error) {
+	if v.log != nil {
+		v.log.Info("Nitro: importing key")
+	}
 	rpcPk, err := rpc.NewPrivateKey(priv)
 	if err != nil {
 		return nil, vault.WrapError(v, err)
@@ -289,10 +314,14 @@ func (v *NitroVault) Import(ctx context.Context, priv crypto.PrivateKey, _ vault
 	}
 	v.keys = append(v.keys, key)
 
-	if err := v.storage.ImportKey(ctx, newEncryptedKey(p, res.EncryptedPrivateKey)); err != nil {
+	if err := v.storage.ImportKey(ctx, p, res.EncryptedPrivateKey); err != nil {
 		return nil, vault.WrapError(v, err)
 	}
 
+	pkh := crypto.NewPublicKeyHash(p)
+	if v.log != nil {
+		v.log.WithFields(keyLogFields(p, pkh)).Info("Nitro: key imported")
+	}
 	return &nitroKeyRef{nitroKey: key, v: v}, nil
 }
 
@@ -303,6 +332,14 @@ func (v *NitroVault) Close(context.Context) error {
 func (v *NitroVault) Ready(context.Context) (bool, error) { return true, nil }
 func (v *NitroVault) Name() string                        { return "nitro" }
 func (v *NitroVault) InstanceInfo() string                { return "Nitro Enclave" }
+
+func keyLogFields(pub crypto.PublicKey, pkh *crypto.PublicKeyHash) map[string]any {
+	fields := map[string]any{"pkh": pkh}
+	if addr := crypto.KeyIdentity(pub); addr != "" {
+		fields["address"] = addr
+	}
+	return fields
+}
 
 // Factory
 
