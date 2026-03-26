@@ -41,7 +41,7 @@ func (c *Config) Default() {
 }
 
 func (conf *Config) FromCmdline(fromFile bool, f *pflag.FlagSet) error {
-	return core.LoadCoreConfigFromCmdline(conf, true, f)
+	return core.LoadCoreConfigFromCmdline(conf, fromFile, f)
 }
 
 func (c *Config) RegisterFlags(f *pflag.FlagSet, cmd *cobra.Command) {

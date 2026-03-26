@@ -82,3 +82,39 @@ func ParseTezosPrivateKey(data []byte) (crypto.LocalSigner, error) {
 		return nil, fmt.Errorf("unknown private key type: %T", priv)
 	}
 }
+
+func ParseRawHexKey(hexKey []byte, alg crypto.Algorithm) (crypto.LocalSigner, error) {
+	s := string(hexKey)
+	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
+		s = s[2:]
+	}
+	raw, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex encoding: %w", err)
+	}
+	switch alg {
+	case crypto.ECDSA_Secp256k1:
+		if len(raw) != 32 {
+			return nil, fmt.Errorf("secp256k1 private key must be 32 bytes, got %d", len(raw))
+		}
+		d := new(big.Int).SetBytes(raw)
+		if d.Sign() == 0 || d.Cmp(ecdsa.Secp256k1.N()) >= 0 {
+			return nil, errors.New("invalid secp256k1 private key: out of range")
+		}
+		return &ecdsa.PrivateKey{
+			Curve: ecdsa.Secp256k1,
+			D:     d,
+		}, nil
+
+	case crypto.BLS12_381_MinPK:
+		if len(raw) != minpk.PrivateKeySize {
+			return nil, fmt.Errorf("BLS private key must be %d bytes, got %d", minpk.PrivateKeySize, len(raw))
+		}
+		var priv minpk.PrivateKey
+		copy(priv[:], raw)
+		return &priv, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported algorithm for raw key import: %v", alg)
+	}
+}
