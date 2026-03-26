@@ -124,7 +124,7 @@ func (it *kmsIterator) Keys() iter.Seq[vault.KeyReference] {
 				}
 			}
 			var err error
-			if out, err = it.v.client.ListKeys(it.ctx, inp); it.err != nil {
+			if out, err = it.v.client.ListKeys(it.ctx, inp); err != nil {
 				it.err = vault.WrapError(it.v, err)
 				return
 			}
