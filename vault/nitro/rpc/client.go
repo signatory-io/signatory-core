@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/signatory-io/signatory-core/logger"
 )
+
+const maxMessageSize = 2 * 1024 * 1024 // 2 MiB, aligned with tee-signer
 
 type Client[C any] struct {
 	conn net.Conn
@@ -68,7 +71,11 @@ func RoundTripRaw[T, C any](ctx context.Context, conn net.Conn, log logger.Logge
 	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
 		return res, err
 	}
-	rBuf := make([]byte, int(binary.BigEndian.Uint32(lenBuf[:])))
+	msgLen := binary.BigEndian.Uint32(lenBuf[:])
+	if msgLen > maxMessageSize {
+		return res, fmt.Errorf("response size %d exceeds maximum %d", msgLen, maxMessageSize)
+	}
+	rBuf := make([]byte, int(msgLen))
 	if _, err := io.ReadFull(conn, rBuf); err != nil {
 		return res, err
 	}
