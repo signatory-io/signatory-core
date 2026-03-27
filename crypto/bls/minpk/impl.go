@@ -93,16 +93,10 @@ func (p *PrivateKey) SignDigest(digest []byte, opts crypto.SignOptions) (crypto.
 }
 
 func (p *PrivateKey) SignMessage(message []byte, opts crypto.SignOptions) (crypto.Signature, error) {
-	if opts != nil {
-		if o, ok := opts.(*bls.Options); !ok || o.Scheme != bls.Prove {
-			if h := opts.HashFunc(); h != nil {
-				hashFunc := h.New()
-				hashFunc.Write(message)
-				message = hashFunc.Sum(nil)
-			}
-		}
+	if o, ok := opts.(*bls.Options); ok && o.Scheme == bls.Prove {
+		return p.SignDigest(message, opts)
 	}
-	return p.SignDigest(message, opts)
+	return p.SignDigest(crypto.HashMessage(message, opts), opts)
 }
 
 func (p *PublicKey) VerifyDigestSignature(sig crypto.Signature, digest []byte, opts crypto.SignOptions) bool {
@@ -130,14 +124,8 @@ func (p *PublicKey) VerifyDigestSignature(sig crypto.Signature, digest []byte, o
 }
 
 func (p *PublicKey) VerifyMessageSignature(sig crypto.Signature, message []byte, opts crypto.SignOptions) bool {
-	if opts != nil {
-		if o, ok := opts.(*bls.Options); !ok || o.Scheme != bls.Prove {
-			if h := opts.HashFunc(); h != nil {
-				hashFunc := h.New()
-				hashFunc.Write(message)
-				message = hashFunc.Sum(nil)
-			}
-		}
+	if o, ok := opts.(*bls.Options); ok && o.Scheme != bls.Prove {
+		message = crypto.HashMessage(message, opts)
 	}
 	return p.VerifyDigestSignature(sig, message, opts)
 }

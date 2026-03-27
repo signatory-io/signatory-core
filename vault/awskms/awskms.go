@@ -46,25 +46,8 @@ func (k *kmsKey) Algorithm() crypto.Algorithm {
 
 func (k *kmsKey) PublicKey() crypto.PublicKey { return k.pub }
 
-func getHash(opts crypto.SignOptions) crypto.Hash {
-	if opts != nil {
-		if h := opts.HashFunc(); h != nil {
-			return h
-		}
-	}
-	return nil
-}
-
 func (k *kmsKey) SignMessage(ctx context.Context, message []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
-	var hash crypto.Hash
-	if h := getHash(opts); h != nil {
-		hash = h
-	} else {
-		hash = crypto.SHA256
-	}
-	h := hash.New()
-	h.Write(message)
-	return k.SignDigest(ctx, h.Sum(nil), sc, opts)
+	return k.SignDigest(ctx, crypto.HashMessage(message, opts), sc, opts)
 }
 
 func (k *kmsKey) SignDigest(ctx context.Context, digest []byte, sc vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {

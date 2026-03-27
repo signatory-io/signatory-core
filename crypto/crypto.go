@@ -175,3 +175,14 @@ type LocalVerifier interface {
 type SignOptions interface {
 	HashFunc() Hash
 }
+
+func HashMessage(message []byte, opts SignOptions) []byte {
+	if opts != nil {
+		if h := opts.HashFunc(); h != nil {
+			hashFunc := h.New()
+			hashFunc.Write(message)
+			return hashFunc.Sum(nil)
+		}
+	}
+	return message
+}

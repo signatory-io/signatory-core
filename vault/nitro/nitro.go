@@ -57,18 +57,7 @@ func (r *nitroKeyRef) PublicKey() crypto.PublicKey { return r.pub }
 func (r *nitroKeyRef) Vault() vault.Vault          { return r.v }
 
 func (r *nitroKeyRef) SignMessage(ctx context.Context, message []byte, _ vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
-	var hash crypto.Hash
-	if opts != nil {
-		if h := opts.HashFunc(); h != nil {
-			hash = h
-		}
-	}
-	if hash == nil {
-		hash = crypto.SHA256
-	}
-	h := hash.New()
-	h.Write(message)
-	return r.SignDigest(ctx, h.Sum(nil), nil, opts)
+	return r.SignDigest(ctx, crypto.HashMessage(message, opts), nil, opts)
 }
 
 func (r *nitroKeyRef) SignDigest(ctx context.Context, digest []byte, _ vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
