@@ -39,6 +39,13 @@ func KeyTypeFromAlgorithm(alg crypto.Algorithm) (KeyType, error) {
 
 type Protected string
 
+func (p Protected) String() string {
+	if p != "" {
+		return "(redacted)"
+	}
+	return ""
+}
+
 func (p Protected) GoString() string {
 	if p != "" {
 		return "\"(FILTERED)\""
@@ -244,8 +251,8 @@ type ImportResult struct {
 }
 
 type Result[T any] struct {
-	Ok  T         `json:",omitempty"`
-	Err *RPCError `json:",omitempty"`
+	Ok  T         `cbor:"Ok,omitempty"`
+	Err *RPCError `cbor:"Err,omitempty"`
 }
 
 func (r *Result[T]) Error() error {

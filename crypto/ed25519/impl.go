@@ -49,14 +49,7 @@ func (p *PrivateKey) SignDigest(digest []byte, opts crypto.SignOptions) (crypto.
 }
 
 func (p *PrivateKey) SignMessage(message []byte, opts crypto.SignOptions) (crypto.Signature, error) {
-	if opts != nil {
-		if h := opts.HashFunc(); h != nil {
-			hashFunc := h.New()
-			hashFunc.Write(message)
-			message = hashFunc.Sum(nil)
-		}
-	}
-	return p.SignDigest(message, opts)
+	return p.SignDigest(crypto.HashMessage(message, opts), opts)
 }
 
 func (p *PublicKey) VerifyDigestSignature(sig crypto.Signature, digest []byte, opts crypto.SignOptions) bool {
@@ -67,14 +60,7 @@ func (p *PublicKey) VerifyDigestSignature(sig crypto.Signature, digest []byte, o
 }
 
 func (p *PublicKey) VerifyMessageSignature(sig crypto.Signature, message []byte, opts crypto.SignOptions) bool {
-	if opts != nil {
-		if h := opts.HashFunc(); h != nil {
-			hashFunc := h.New()
-			hashFunc.Write(message)
-			message = hashFunc.Sum(nil)
-		}
-	}
-	return p.VerifyDigestSignature(sig, message, opts)
+	return p.VerifyDigestSignature(sig, crypto.HashMessage(message, opts), opts)
 }
 
 func (p *PrivateKey) IsAvailable() bool { return true }

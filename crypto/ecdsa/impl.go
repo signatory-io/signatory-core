@@ -18,15 +18,6 @@ var (
 	_ crypto.LocalVerifier = (*PublicKey)(nil)
 )
 
-func getHash(opts crypto.SignOptions) crypto.Hash {
-	if opts != nil {
-		if h := opts.HashFunc(); h != nil {
-			return h
-		}
-	}
-	return nil
-}
-
 func GeneratePrivateKey(crv Curve) (*PrivateKey, error) {
 	switch crv {
 	case NIST_P256, NIST_P384, NIST_P521:
@@ -61,15 +52,7 @@ func (p *PrivateKey) Public() crypto.PublicKey {
 }
 
 func (p *PrivateKey) SignMessage(message []byte, opts crypto.SignOptions) (crypto.Signature, error) {
-	var hash crypto.Hash
-	if h := getHash(opts); h != nil {
-		hash = h
-	} else {
-		hash = crypto.SHA256
-	}
-	h := hash.New()
-	h.Write(message)
-	return p.SignDigest(h.Sum(nil), opts)
+	return p.SignDigest(crypto.HashMessage(message, opts), opts)
 }
 
 func (p *PrivateKey) SignDigest(digest []byte, opts crypto.SignOptions) (crypto.Signature, error) {
@@ -237,15 +220,7 @@ func (p *PublicKey) VerifyDigestSignature(sig crypto.Signature, digest []byte, o
 }
 
 func (p *PublicKey) VerifyMessageSignature(sig crypto.Signature, message []byte, opts crypto.SignOptions) bool {
-	var hash crypto.Hash
-	if h := getHash(opts); h != nil {
-		hash = h
-	} else {
-		hash = crypto.SHA256
-	}
-	h := hash.New()
-	h.Write(message)
-	return p.VerifyDigestSignature(sig, h.Sum(nil), opts)
+	return p.VerifyDigestSignature(sig, crypto.HashMessage(message, opts), opts)
 }
 
 func (p *PublicKey) getImpl() publicKeyImpl {

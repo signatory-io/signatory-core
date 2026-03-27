@@ -29,7 +29,7 @@ func GenerateRecoveryCode(sig *Signature, pub *PublicKey, digest []byte) (*Signa
 	}
 
 	/*
-		Note from Etherium libsecp256k1:
+		Note from Ethereum libsecp256k1:
 
 		The overflow condition is cryptographically unreachable as hitting it requires finding the discrete log
 		of some P where P.x >= order, and only 1 in about 2^127 points meet this criteria.

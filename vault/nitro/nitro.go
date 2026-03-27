@@ -57,18 +57,7 @@ func (r *nitroKeyRef) PublicKey() crypto.PublicKey { return r.pub }
 func (r *nitroKeyRef) Vault() vault.Vault          { return r.v }
 
 func (r *nitroKeyRef) SignMessage(ctx context.Context, message []byte, _ vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
-	var hash crypto.Hash
-	if opts != nil {
-		if h := opts.HashFunc(); h != nil {
-			hash = h
-		}
-	}
-	if hash == nil {
-		hash = crypto.SHA256
-	}
-	h := hash.New()
-	h.Write(message)
-	return r.SignDigest(ctx, h.Sum(nil), nil, opts)
+	return r.SignDigest(ctx, crypto.HashMessage(message, opts), nil, opts)
 }
 
 func (r *nitroKeyRef) SignDigest(ctx context.Context, digest []byte, _ vault.SecretManager, opts crypto.SignOptions) (crypto.Signature, error) {
@@ -154,6 +143,12 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 	if err != nil {
 		return nil, fmt.Errorf("(Nitro Enclave): dial %s: %w", &addr, err)
 	}
+	success := false
+	defer func() {
+		if !success {
+			conn.Close()
+		}
+	}()
 	if log != nil {
 		log.Info("Nitro: connected to enclave signer")
 	}
@@ -185,6 +180,9 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 		if err != nil {
 			return nil, fmt.Errorf("(Nitro Enclave): parse public key %s: %w", pkh, err)
 		}
+		if !k.pub.Equal(p) {
+			return nil, fmt.Errorf("(Nitro Enclave): public key mismatch for %s: on-disk key differs from enclave", pkh)
+		}
 		keys = append(keys, &nitroKey{
 			pub:    p,
 			handle: res.Handle,
@@ -194,6 +192,7 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 		log.With("keys", len(keys)).Info("Nitro: vault ready")
 	}
 
+	success = true
 	return &NitroVault{
 		client:  client,
 		storage: storage,
@@ -308,15 +307,15 @@ func (v *NitroVault) Import(ctx context.Context, priv crypto.PrivateKey, _ vault
 	if err != nil {
 		return nil, vault.WrapError(v, err)
 	}
+	if err := v.storage.ImportKey(ctx, p, res.EncryptedPrivateKey); err != nil {
+		return nil, vault.WrapError(v, err)
+	}
+
 	key := &nitroKey{
 		pub:    p,
 		handle: res.Handle,
 	}
 	v.keys = append(v.keys, key)
-
-	if err := v.storage.ImportKey(ctx, p, res.EncryptedPrivateKey); err != nil {
-		return nil, vault.WrapError(v, err)
-	}
 
 	pkh := crypto.NewPublicKeyHash(p)
 	if v.log != nil {

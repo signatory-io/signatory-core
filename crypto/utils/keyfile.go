@@ -92,7 +92,9 @@ func NewKeyFile(priv crypto.LocalSigner, secret []byte) *KeyFile {
 	var data KeyFile
 	if len(secret) != 0 {
 		var salt [16]byte
-		rand.Read(salt[:])
+		if _, err := rand.Read(salt[:]); err != nil {
+			panic(err)
+		}
 
 		key, err := pbkdf2.Key(sha512.New, string(secret), salt[:], encIterations, encKeyLen)
 		if err != nil {
@@ -137,7 +139,19 @@ func WriteKeyFile(name, tmpSuffix string, data *KeyFile, perm os.FileMode) error
 		tmpSuffix = "_tmp"
 	}
 	tmpName := name + tmpSuffix
-	if err = os.WriteFile(tmpName, buf, perm); err != nil {
+	fd, err := os.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := fd.Write(buf); err != nil {
+		fd.Close()
+		return err
+	}
+	if err := fd.Sync(); err != nil {
+		fd.Close()
+		return err
+	}
+	if err := fd.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmpName, name)
