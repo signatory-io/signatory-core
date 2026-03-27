@@ -18,12 +18,14 @@ type Service struct {
 }
 
 func New(ctx context.Context, conf *Config, logger logger.Logger) (*Service, error) {
+	conf.Log = logger
 	signer, err := signer.NewWithConfig(ctx, conf)
 	if err != nil {
 		return nil, err
 	}
-	api := signerapi.API{Signer: signer}
+	api := signerapi.API{Signer: signer, Log: logger}
 	handler := rpc.NewHandler()
+	handler.Log = logger
 	handler.RegisterModule(signerapi.Path, &api)
 
 	l := logger.With("address", conf.RPCAddress)

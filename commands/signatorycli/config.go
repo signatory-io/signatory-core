@@ -29,6 +29,7 @@ func (c *Config) SetBasePath(path string)        { c.BasePath = path }
 func (c *Config) GetRPCAddress() string          { return c.RPCEndpoint }
 func (c *Config) SetRPCAddress(address string)   { c.RPCEndpoint = address }
 func (c *Config) SetLogLevel(level logger.Level) { c.LogLevel = level }
+func (c *Config) GetLogger() logger.Logger       { return nil }
 
 func (c *Config) Default() {
 	dir, _ := os.UserHomeDir()
@@ -40,7 +41,7 @@ func (c *Config) Default() {
 }
 
 func (conf *Config) FromCmdline(fromFile bool, f *pflag.FlagSet) error {
-	return core.LoadCoreConfigFromCmdline(conf, true, f)
+	return core.LoadCoreConfigFromCmdline(conf, fromFile, f)
 }
 
 func (c *Config) RegisterFlags(f *pflag.FlagSet, cmd *cobra.Command) {

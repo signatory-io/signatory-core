@@ -3,6 +3,7 @@ package ecdsa
 import (
 	"testing"
 
+	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,11 +21,12 @@ func TestImpl(t *testing.T) {
 			require.NoError(t, err)
 
 			text := []byte("text")
-			sig, err := priv.SignMessage(text, nil)
+			opts := &Options{Hash: crypto.SHA256}
+			sig, err := priv.SignMessage(text, opts)
 			require.NoError(t, err)
 
 			pub := priv.Public().(*PublicKey)
-			require.True(t, pub.VerifyMessageSignature(sig, text, nil))
+			require.True(t, pub.VerifyMessageSignature(sig, text, opts))
 		})
 	}
 }

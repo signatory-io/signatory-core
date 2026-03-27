@@ -7,6 +7,7 @@ import (
 	"github.com/signatory-io/signatory-core/crypto"
 	"github.com/signatory-io/signatory-core/crypto/cose"
 	cosekey "github.com/signatory-io/signatory-core/crypto/cose/key"
+	"github.com/signatory-io/signatory-core/logger"
 	"github.com/signatory-io/signatory-core/rpc"
 	uirpc "github.com/signatory-io/signatory-core/rpc/ui"
 	"github.com/signatory-io/signatory-core/signer"
@@ -22,9 +23,17 @@ const (
 
 type API struct {
 	Signer *signer.Signer
+	Log    logger.Logger
 }
 
 const Path = "signer"
+
+func (s *API) logger() logger.Logger {
+	if s.Log != nil {
+		return s.Log
+	}
+	return logger.Nop()
+}
 
 func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
 	it := s.Signer.ListKeys(ctx, vaultID, filter)
@@ -34,6 +43,7 @@ func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algo
 			PublicKeyHash: crypto.NewPublicKeyHash(pub),
 			Algorithm:     pub.PublicKeyType(),
 			PublicKey:     pub.COSE(),
+			Identity:      crypto.KeyIdentity(pub),
 			Vault: VaultInfo{
 				ID:           key.VaultID(),
 				Name:         key.Vault().Name(),
@@ -63,6 +73,7 @@ func (s *API) ListVaults() (infos []VaultInfo, err error) {
 }
 
 func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
+	s.logger().WithFields(map[string]any{"vault": vaultID, "algorithm": alg}).Info("generating key")
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -85,10 +96,12 @@ func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algori
 		return nil, err
 	}
 	pub := key.PublicKey()
+	identity := crypto.KeyIdentity(pub)
 	keyInfo := KeyInfo{
 		PublicKeyHash: crypto.NewPublicKeyHash(pub),
 		Algorithm:     pub.PublicKeyType(),
 		PublicKey:     pub.COSE(),
+		Identity:      identity,
 		Vault: VaultInfo{
 			ID:           vi.ID(),
 			Name:         vi.Vault().Name(),
@@ -98,10 +111,16 @@ func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algori
 	if u, ok := key.(vault.Unlocker); ok {
 		keyInfo.Locked = u.IsLocked()
 	}
+	genAttrs := map[string]any{"vault": vaultID, "algorithm": alg, "pkh": keyInfo.PublicKeyHash}
+	if identity != "" {
+		genAttrs["address"] = identity
+	}
+	s.logger().WithFields(genAttrs).Info("key generated")
 	return &keyInfo, nil
 }
 
 func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, options vault.EncryptKey) (*KeyInfo, error) {
+	s.logger().With("vault", vaultID).Info("importing key")
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -128,10 +147,12 @@ func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, opt
 		return nil, err
 	}
 	pub := key.PublicKey()
+	identity := crypto.KeyIdentity(pub)
 	keyInfo := KeyInfo{
 		PublicKeyHash: crypto.NewPublicKeyHash(pub),
 		Algorithm:     pub.PublicKeyType(),
 		PublicKey:     pub.COSE(),
+		Identity:      identity,
 		Vault: VaultInfo{
 			ID:           vi.ID(),
 			Name:         vi.Vault().Name(),
@@ -141,6 +162,11 @@ func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, opt
 	if u, ok := key.(vault.Unlocker); ok {
 		keyInfo.Locked = u.IsLocked()
 	}
+	impAttrs := map[string]any{"vault": vaultID, "pkh": keyInfo.PublicKeyHash}
+	if identity != "" {
+		impAttrs["address"] = identity
+	}
+	s.logger().WithFields(impAttrs).Info("key imported")
 	return &keyInfo, nil
 }
 
@@ -171,6 +197,7 @@ type KeyInfo struct {
 	PublicKey     cose.Key              `cbor:"2,keyasint"`
 	Locked        bool                  `cbor:"3,keyasint"`
 	Vault         VaultInfo             `cbor:"4,keyasint"`
+	Identity      string                `cbor:"5,keyasint,omitempty"`
 }
 
 type VaultInfo struct {

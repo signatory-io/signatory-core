@@ -4,6 +4,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"math/big"
 
 	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/signatory-io/signatory-core/crypto/oiddb"
@@ -16,8 +17,19 @@ func GenerateRecoveryCode(sig *Signature, pub *PublicKey, digest []byte) (*Signa
 	if sig.Curve != Secp256k1 {
 		return nil, fmt.Errorf("recovery code generation for %v curve is not supported", sig.Curve)
 	}
+
+	r := sig.R
+	s := sig.S
+
+	// Normalize S to low-S per EIP-2 / BIP-62. External signers (HSMs, enclaves)
+	// may return high-S values which cause recovery to produce the wrong public key.
+	halfN := new(big.Int).Rsh(Secp256k1.N(), 1)
+	if s.Cmp(halfN) > 0 {
+		s = new(big.Int).Sub(Secp256k1.N(), s)
+	}
+
 	/*
-		Note from Etherium libsecp256k1:
+		Note from Ethereum libsecp256k1:
 
 		The overflow condition is cryptographically unreachable as hitting it requires finding the discrete log
 		of some P where P.x >= order, and only 1 in about 2^127 points meet this criteria.
@@ -25,8 +37,8 @@ func GenerateRecoveryCode(sig *Signature, pub *PublicKey, digest []byte) (*Signa
 		Thus just two candidates --eugene
 	*/
 	var out [65]byte
-	sig.R.FillBytes(out[1:33])
-	sig.S.FillBytes(out[33:65])
+	r.FillBytes(out[1:33])
+	s.FillBytes(out[33:65])
 	var v int
 	for v = 0; v < 2; v++ {
 		out[0] = byte(v) + 27
@@ -42,8 +54,9 @@ func GenerateRecoveryCode(sig *Signature, pub *PublicKey, digest []byte) (*Signa
 		return nil, errors.New("error generating recovery code")
 	}
 	return &Signature{
-		R:               sig.R,
-		S:               sig.S,
+		Curve:           sig.Curve,
+		R:               r,
+		S:               s,
 		HasRecoveryCode: true,
 		RecoveryCode:    uint8(v),
 	}, nil

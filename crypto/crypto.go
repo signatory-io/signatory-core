@@ -130,6 +130,21 @@ type PublicKey interface {
 	Equal(other PublicKey) bool
 }
 
+// KeyIdentityFunc converts a public key to a chain-specific human-readable
+// identifier (e.g. an Ethereum address). Set via SetKeyIdentityFunc at startup.
+type KeyIdentityFunc func(PublicKey) string
+
+var keyIdentityFunc KeyIdentityFunc
+
+func SetKeyIdentityFunc(f KeyIdentityFunc) { keyIdentityFunc = f }
+
+func KeyIdentity(pub PublicKey) string {
+	if f := keyIdentityFunc; f != nil {
+		return f(pub)
+	}
+	return ""
+}
+
 type Signature interface {
 	SignatureAlgorithm() Algorithm
 	Bytes() []byte
@@ -159,4 +174,15 @@ type LocalVerifier interface {
 
 type SignOptions interface {
 	HashFunc() Hash
+}
+
+func HashMessage(message []byte, opts SignOptions) []byte {
+	if opts != nil {
+		if h := opts.HashFunc(); h != nil {
+			hashFunc := h.New()
+			hashFunc.Write(message)
+			return hashFunc.Sum(nil)
+		}
+	}
+	return message
 }
