@@ -43,6 +43,7 @@ func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algo
 			PublicKeyHash: crypto.NewPublicKeyHash(pub),
 			Algorithm:     pub.PublicKeyType(),
 			PublicKey:     pub.COSE(),
+			Identity:      crypto.KeyIdentity(pub),
 			Vault: VaultInfo{
 				ID:           key.VaultID(),
 				Name:         key.Vault().Name(),
@@ -95,10 +96,12 @@ func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algori
 		return nil, err
 	}
 	pub := key.PublicKey()
+	identity := crypto.KeyIdentity(pub)
 	keyInfo := KeyInfo{
 		PublicKeyHash: crypto.NewPublicKeyHash(pub),
 		Algorithm:     pub.PublicKeyType(),
 		PublicKey:     pub.COSE(),
+		Identity:      identity,
 		Vault: VaultInfo{
 			ID:           vi.ID(),
 			Name:         vi.Vault().Name(),
@@ -109,8 +112,8 @@ func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algori
 		keyInfo.Locked = u.IsLocked()
 	}
 	genAttrs := map[string]any{"vault": vaultID, "algorithm": alg, "pkh": keyInfo.PublicKeyHash}
-	if addr := crypto.KeyIdentity(pub); addr != "" {
-		genAttrs["address"] = addr
+	if identity != "" {
+		genAttrs["address"] = identity
 	}
 	s.logger().WithFields(genAttrs).Info("key generated")
 	return &keyInfo, nil
@@ -144,10 +147,12 @@ func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, opt
 		return nil, err
 	}
 	pub := key.PublicKey()
+	identity := crypto.KeyIdentity(pub)
 	keyInfo := KeyInfo{
 		PublicKeyHash: crypto.NewPublicKeyHash(pub),
 		Algorithm:     pub.PublicKeyType(),
 		PublicKey:     pub.COSE(),
+		Identity:      identity,
 		Vault: VaultInfo{
 			ID:           vi.ID(),
 			Name:         vi.Vault().Name(),
@@ -158,8 +163,8 @@ func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, opt
 		keyInfo.Locked = u.IsLocked()
 	}
 	impAttrs := map[string]any{"vault": vaultID, "pkh": keyInfo.PublicKeyHash}
-	if addr := crypto.KeyIdentity(pub); addr != "" {
-		impAttrs["address"] = addr
+	if identity != "" {
+		impAttrs["address"] = identity
 	}
 	s.logger().WithFields(impAttrs).Info("key imported")
 	return &keyInfo, nil
@@ -192,6 +197,7 @@ type KeyInfo struct {
 	PublicKey     cose.Key              `cbor:"2,keyasint"`
 	Locked        bool                  `cbor:"3,keyasint"`
 	Vault         VaultInfo             `cbor:"4,keyasint"`
+	Identity      string                `cbor:"5,keyasint,omitempty"`
 }
 
 type VaultInfo struct {

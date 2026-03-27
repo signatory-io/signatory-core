@@ -206,38 +206,64 @@ func newImportKeyCommand() *cobra.Command {
 		Short: "Import private key",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			var keyData []byte
-			if len(args) != 0 {
-				keyData = []byte(args[0])
-			} else {
-				if keyData, err = os.ReadFile(path); err != nil {
-					return err
-				}
-			}
 			var priv crypto.LocalSigner
-			switch format {
-			case "erc2335":
-				if priv, err = cryptoutils.ParseERC2335Key(keyData); err != nil {
+			if format == "raw" {
+				var termUI ui.Terminal
+				var algChoice, hexInput string
+				if err := termUI.Dialog(cmd.Context(), &ui.Dialog{
+					Items: []ui.Item{
+						&ui.Input{Prompt: "Key type [secp256k1, bls]", Value: &algChoice},
+						&ui.Password{Prompt: "Private key (hex)", Value: &hexInput},
+					},
+				}); err != nil {
 					return err
 				}
-			case "geth":
-				if priv, err = cryptoutils.ParseGethKey(keyData); err != nil {
+				algChoice = strings.TrimSpace(strings.ToLower(algChoice))
+				var alg crypto.Algorithm
+				switch algChoice {
+				case "secp256k1":
+					alg = crypto.ECDSA_Secp256k1
+				case "bls":
+					alg = crypto.BLS12_381_MinPK
+				default:
+					return fmt.Errorf("unsupported key type %q, expected secp256k1 or bls", algChoice)
+				}
+				if priv, err = cryptoutils.ParseRawHexKey([]byte(hexInput), alg); err != nil {
 					return err
 				}
-			case "tz":
-				if priv, err = cryptoutils.ParseTezosPrivateKey(keyData); err != nil {
-					return err
+			} else {
+				var keyData []byte
+				if len(args) != 0 {
+					keyData = []byte(args[0])
+				} else {
+					if keyData, err = os.ReadFile(path); err != nil {
+						return err
+					}
 				}
-			case "pkcs8":
-				p, _ := pem.Decode(keyData)
-				if p == nil {
-					return errors.New("failed to parse PEM block")
+				switch format {
+				case "erc2335":
+					if priv, err = cryptoutils.ParseERC2335Key(keyData); err != nil {
+						return err
+					}
+				case "geth":
+					if priv, err = cryptoutils.ParseGethKey(keyData); err != nil {
+						return err
+					}
+				case "tz":
+					if priv, err = cryptoutils.ParseTezosPrivateKey(keyData); err != nil {
+						return err
+					}
+				case "pkcs8":
+					p, _ := pem.Decode(keyData)
+					if p == nil {
+						return errors.New("failed to parse PEM block")
+					}
+					if priv, err = pkcs8.ParsePrivateKey(p.Bytes); err != nil {
+						return err
+					}
+				default:
+					return fmt.Errorf("unknown key format %s", format)
 				}
-				if priv, err = pkcs8.ParsePrivateKey(p.Bytes); err != nil {
-					return err
-				}
-			default:
-				return fmt.Errorf("unknown key format %s", format)
 			}
 
 			var conf Config
@@ -262,7 +288,7 @@ func newImportKeyCommand() *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVarP(&vaultID, "vault", "v", "", "Vault ID")
-	f.StringVarP(&format, "format", "f", "pkcs8", "Private key format [pkcs8, geth, tz, erc2335]")
+	f.StringVarP(&format, "format", "f", "pkcs8", "Private key format [pkcs8, geth, tz, erc2335, raw]")
 	f.StringVarP(&path, "input", "i", "", "Input file")
 	f.BoolVarP(&encrypt, "encrypt", "E", false, "Encrypt key with a password")
 	cmd.MarkFlagFilename("input")
@@ -286,6 +312,9 @@ func dumpKeyInfo(key *api.KeyInfo) {
 			}
 			fmt.Fprintf(w, "\t%s\n", l)
 		}
+	}
+	if key.Identity != "" {
+		fmt.Fprintf(w, "Address:\t%s\n", key.Identity)
 	}
 	fmt.Fprintf(w, "Public Key Hash:\t%v\n", key.PublicKeyHash)
 	fmt.Fprintf(w, "Algorithm:\t%v\n", key.Algorithm)

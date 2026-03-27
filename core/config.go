@@ -78,7 +78,7 @@ func LoadCoreConfigFromCmdline[T CoreConfig](conf T, loadFromFile bool, f *pflag
 		if !filepath.IsAbs(confPath) {
 			confPath = filepath.Join(baseDir, confPath)
 		}
-		if err := LoadConfig(conf, confPath); err != nil {
+		if err := LoadConfig(conf, confPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
