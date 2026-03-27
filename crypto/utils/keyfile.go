@@ -92,7 +92,9 @@ func NewKeyFile(priv crypto.LocalSigner, secret []byte) *KeyFile {
 	var data KeyFile
 	if len(secret) != 0 {
 		var salt [16]byte
-		rand.Read(salt[:])
+		if _, err := rand.Read(salt[:]); err != nil {
+			panic(err)
+		}
 
 		key, err := pbkdf2.Key(sha512.New, string(secret), salt[:], encIterations, encKeyLen)
 		if err != nil {
