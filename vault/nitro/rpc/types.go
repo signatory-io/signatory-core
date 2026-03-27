@@ -39,6 +39,13 @@ func KeyTypeFromAlgorithm(alg crypto.Algorithm) (KeyType, error) {
 
 type Protected string
 
+func (p Protected) String() string {
+	if p != "" {
+		return "(redacted)"
+	}
+	return ""
+}
+
 func (p Protected) GoString() string {
 	if p != "" {
 		return "\"(FILTERED)\""
