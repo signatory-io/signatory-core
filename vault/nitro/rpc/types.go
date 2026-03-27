@@ -251,8 +251,8 @@ type ImportResult struct {
 }
 
 type Result[T any] struct {
-	Ok  T         `json:",omitempty"`
-	Err *RPCError `json:",omitempty"`
+	Ok  T         `cbor:"Ok,omitempty"`
+	Err *RPCError `cbor:"Err,omitempty"`
 }
 
 func (r *Result[T]) Error() error {
