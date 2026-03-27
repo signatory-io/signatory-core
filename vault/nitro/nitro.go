@@ -180,6 +180,9 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 		if err != nil {
 			return nil, fmt.Errorf("(Nitro Enclave): parse public key %s: %w", pkh, err)
 		}
+		if !k.pub.Equal(p) {
+			return nil, fmt.Errorf("(Nitro Enclave): public key mismatch for %s: on-disk key differs from enclave", pkh)
+		}
 		keys = append(keys, &nitroKey{
 			pub:    p,
 			handle: res.Handle,
