@@ -28,6 +28,13 @@ type API struct {
 
 const Path = "signer"
 
+func (s *API) logger() logger.Logger {
+	if s.Log != nil {
+		return s.Log
+	}
+	return logger.Nop()
+}
+
 func (s *API) ListKeys(ctx context.Context, vaultID string, filter []crypto.Algorithm) (keys []*KeyInfo, err error) {
 	it := s.Signer.ListKeys(ctx, vaultID, filter)
 	for key := range it.Keys() {
@@ -65,7 +72,7 @@ func (s *API) ListVaults() (infos []VaultInfo, err error) {
 }
 
 func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algorithm, options vault.EncryptKey) (*KeyInfo, error) {
-	s.Log.WithFields(map[string]any{"vault": vaultID, "algorithm": alg}).Info("generating key")
+	s.logger().WithFields(map[string]any{"vault": vaultID, "algorithm": alg}).Info("generating key")
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -105,12 +112,12 @@ func (s *API) GenerateKey(ctx context.Context, vaultID string, alg crypto.Algori
 	if addr := crypto.KeyIdentity(pub); addr != "" {
 		genAttrs["address"] = addr
 	}
-	s.Log.WithFields(genAttrs).Info("key generated")
+	s.logger().WithFields(genAttrs).Info("key generated")
 	return &keyInfo, nil
 }
 
 func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, options vault.EncryptKey) (*KeyInfo, error) {
-	s.Log.With("vault", vaultID).Info("importing key")
+	s.logger().With("vault", vaultID).Info("importing key")
 	c := rpc.GetContext(ctx)
 	var secretManager vault.SecretManager
 	if c, ok := c.(rpc.BidirectionalContext); ok {
@@ -154,7 +161,7 @@ func (s *API) ImportKey(ctx context.Context, vaultID string, input cose.Key, opt
 	if addr := crypto.KeyIdentity(pub); addr != "" {
 		impAttrs["address"] = addr
 	}
-	s.Log.WithFields(impAttrs).Info("key imported")
+	s.logger().WithFields(impAttrs).Info("key imported")
 	return &keyInfo, nil
 }
 
