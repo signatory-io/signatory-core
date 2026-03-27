@@ -154,6 +154,12 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 	if err != nil {
 		return nil, fmt.Errorf("(Nitro Enclave): dial %s: %w", &addr, err)
 	}
+	success := false
+	defer func() {
+		if !success {
+			conn.Close()
+		}
+	}()
 	if log != nil {
 		log.Info("Nitro: connected to enclave signer")
 	}
@@ -194,6 +200,7 @@ func New(ctx context.Context, config *Config, opt utils.GlobalOptions) (*NitroVa
 		log.With("keys", len(keys)).Info("Nitro: vault ready")
 	}
 
+	success = true
 	return &NitroVault{
 		client:  client,
 		storage: storage,
