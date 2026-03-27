@@ -308,15 +308,15 @@ func (v *NitroVault) Import(ctx context.Context, priv crypto.PrivateKey, _ vault
 	if err != nil {
 		return nil, vault.WrapError(v, err)
 	}
+	if err := v.storage.ImportKey(ctx, p, res.EncryptedPrivateKey); err != nil {
+		return nil, vault.WrapError(v, err)
+	}
+
 	key := &nitroKey{
 		pub:    p,
 		handle: res.Handle,
 	}
 	v.keys = append(v.keys, key)
-
-	if err := v.storage.ImportKey(ctx, p, res.EncryptedPrivateKey); err != nil {
-		return nil, vault.WrapError(v, err)
-	}
 
 	pkh := crypto.NewPublicKeyHash(p)
 	if v.log != nil {
