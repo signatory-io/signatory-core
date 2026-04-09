@@ -80,17 +80,31 @@ func (a *Addr) sockaddr() *unix.SockaddrVM {
 }
 
 func newConn(fd *os.File, peer unix.Sockaddr) (*Conn, error) {
-	sn, err := unix.Getsockname(int(fd.Fd()))
+	raw, err := fd.SyscallConn()
 	if err != nil {
 		return nil, err
+	}
+	var sn unix.Sockaddr
+	var sysErr error
+	if err := raw.Control(func(sysfd uintptr) {
+		sn, sysErr = unix.Getsockname(int(sysfd))
+	}); err != nil {
+		return nil, err
+	}
+	if sysErr != nil {
+		return nil, sysErr
 	}
 	l_sa := sn.(*unix.SockaddrVM)
 	l_addr := Addr{CID: l_sa.CID, Port: l_sa.Port}
 
 	if peer == nil {
-		peer, err = unix.Getpeername(int(fd.Fd()))
-		if err != nil {
+		if err := raw.Control(func(sysfd uintptr) {
+			peer, sysErr = unix.Getpeername(int(sysfd))
+		}); err != nil {
 			return nil, err
+		}
+		if sysErr != nil {
+			return nil, sysErr
 		}
 	}
 	r_sa := peer.(*unix.SockaddrVM)
@@ -118,30 +132,36 @@ func Dial(addr *Addr) (conn *Conn, err error) {
 		}
 	}()
 
-	switch err := unix.Connect(int(fd.Fd()), addr.sockaddr()); err {
+	raw, err := fd.SyscallConn()
+	if err != nil {
+		return nil, wrapErr(err, "dial", nil, addr)
+	}
+
+	var connectErr error
+	if err := raw.Control(func(sysfd uintptr) {
+		connectErr = unix.Connect(int(sysfd), addr.sockaddr())
+	}); err != nil {
+		return nil, wrapErr(err, "dial", nil, addr)
+	}
+	switch connectErr {
 	case unix.EINPROGRESS:
 	case nil:
 		return newConn(fd, nil)
 	default:
-		return nil, wrapErr(err, "dial", nil, addr)
-	}
-
-	raw, err := fd.SyscallConn()
-	if err != nil {
-		return nil, err
+		return nil, wrapErr(connectErr, "dial", nil, addr)
 	}
 
 	var pn unix.Sockaddr
-	if poll_err := raw.Write(func(fd uintptr) bool {
+	if poll_err := raw.Write(func(sysfd uintptr) bool {
 		var val int
-		val, err = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_ERROR)
+		val, err = unix.GetsockoptInt(int(sysfd), unix.SOL_SOCKET, unix.SO_ERROR)
 		if err == nil && val != 0 {
 			err = unix.Errno(val)
 		}
 		if err != nil {
 			return true
 		}
-		pn, err = unix.Getpeername(int(fd))
+		pn, err = unix.Getpeername(int(sysfd))
 		return err == nil || err != unix.ENOTCONN
 	}); poll_err != nil {
 		return nil, wrapErr(poll_err, "dial", nil, addr)
@@ -178,7 +198,18 @@ func DialContext(ctx context.Context, addr *Addr) (conn *Conn, err error) {
 		}
 	}()
 
-	switch err := unix.Connect(int(fd.Fd()), addr.sockaddr()); err {
+	raw, err := fd.SyscallConn()
+	if err != nil {
+		return nil, wrapErr(err, "dial", nil, addr)
+	}
+
+	var connectErr error
+	if err := raw.Control(func(sysfd uintptr) {
+		connectErr = unix.Connect(int(sysfd), addr.sockaddr())
+	}); err != nil {
+		return nil, wrapErr(err, "dial", nil, addr)
+	}
+	switch connectErr {
 	case unix.EINPROGRESS:
 	case nil:
 		fd.SetDeadline(time.Time{})
@@ -187,25 +218,20 @@ func DialContext(ctx context.Context, addr *Addr) (conn *Conn, err error) {
 		if ctx.Err() != nil {
 			return nil, wrapErr(ctx.Err(), "dial", nil, addr)
 		}
-		return nil, wrapErr(err, "dial", nil, addr)
-	}
-
-	raw, err := fd.SyscallConn()
-	if err != nil {
-		return nil, err
+		return nil, wrapErr(connectErr, "dial", nil, addr)
 	}
 
 	var pn unix.Sockaddr
-	if poll_err := raw.Write(func(fd uintptr) bool {
+	if poll_err := raw.Write(func(sysfd uintptr) bool {
 		var val int
-		val, err = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_ERROR)
+		val, err = unix.GetsockoptInt(int(sysfd), unix.SOL_SOCKET, unix.SO_ERROR)
 		if err == nil && val != 0 {
 			err = unix.Errno(val)
 		}
 		if err != nil {
 			return true
 		}
-		pn, err = unix.Getpeername(int(fd))
+		pn, err = unix.Getpeername(int(sysfd))
 		return err == nil || err != unix.ENOTCONN
 	}); poll_err != nil {
 		if ctx.Err() != nil {
@@ -293,23 +319,40 @@ func Listen(addr *Addr) (listener *Listener, err error) {
 			fd.Close()
 		}
 	}()
-	if err := unix.Bind(int(fd.Fd()), addr.sockaddr()); err != nil {
+	raw, err := fd.SyscallConn()
+	if err != nil {
 		return nil, wrapErr(err, "listen", addr, nil)
 	}
 
-	sn, err := unix.Getsockname(int(fd.Fd()))
-	if err != nil {
+	var sysErr error
+	if err := raw.Control(func(sysfd uintptr) {
+		sysErr = unix.Bind(int(sysfd), addr.sockaddr())
+	}); err != nil {
 		return nil, wrapErr(err, "listen", addr, nil)
+	}
+	if sysErr != nil {
+		return nil, wrapErr(sysErr, "listen", addr, nil)
+	}
+
+	var sn unix.Sockaddr
+	if err := raw.Control(func(sysfd uintptr) {
+		sn, sysErr = unix.Getsockname(int(sysfd))
+	}); err != nil {
+		return nil, wrapErr(err, "listen", addr, nil)
+	}
+	if sysErr != nil {
+		return nil, wrapErr(sysErr, "listen", addr, nil)
 	}
 	l_sa := sn.(*unix.SockaddrVM)
 	l_addr := Addr{CID: l_sa.CID, Port: l_sa.Port}
 
-	if err := unix.Listen(int(fd.Fd()), unix.SOMAXCONN); err != nil {
+	if err := raw.Control(func(sysfd uintptr) {
+		sysErr = unix.Listen(int(sysfd), unix.SOMAXCONN)
+	}); err != nil {
 		return nil, wrapErr(err, "listen", addr, nil)
 	}
-	raw, err := fd.SyscallConn()
-	if err != nil {
-		return nil, err
+	if sysErr != nil {
+		return nil, wrapErr(sysErr, "listen", addr, nil)
 	}
 	return &Listener{fd: fd, raw: raw, l_addr: l_addr}, nil
 }
@@ -322,17 +365,21 @@ func (l *Listener) Close() error {
 }
 
 func (l *Listener) AcceptVSock() (conn *Conn, err error) {
-	fd, addr, err := unix.Accept(int(l.fd.Fd()))
+	var nfd int
+	var sa unix.Sockaddr
+	l.raw.Control(func(sysfd uintptr) {
+		nfd, sa, err = unix.Accept(int(sysfd))
+	})
 	switch err {
 	case unix.EAGAIN:
 	case nil:
-		return newConnFromSys(fd, addr)
+		return newConnFromSys(nfd, sa)
 	default:
 		return nil, wrapErr(err, "accept", &l.l_addr, nil)
 	}
 
-	if poll_err := l.raw.Read(func(uintptr) bool {
-		fd, addr, err = unix.Accept(int(l.fd.Fd()))
+	if poll_err := l.raw.Read(func(sysfd uintptr) bool {
+		nfd, sa, err = unix.Accept(int(sysfd))
 		return err == nil || err != unix.EAGAIN
 	}); poll_err != nil {
 		return nil, wrapErr(poll_err, "accept", &l.l_addr, nil)
@@ -341,7 +388,7 @@ func (l *Listener) AcceptVSock() (conn *Conn, err error) {
 		return nil, wrapErr(err, "accept", &l.l_addr, nil)
 	}
 
-	return newConnFromSys(fd, addr)
+	return newConnFromSys(nfd, sa)
 }
 
 func (l *Listener) Accept() (conn net.Conn, err error) {
