@@ -3,6 +3,7 @@ package rpcutils
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/signatory-io/signatory-core/logger"
 )
+
+var ErrAccessDenied = errors.New("access denied")
 
 func constantTimeCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
@@ -61,20 +64,24 @@ func (j *JWT) GenerateToken(user string, pass string) (string, error) {
 	claims["user"] = user
 	ud, ok := j.GetUserData(user)
 	if !ok {
-		return "", fmt.Errorf("JWT: user not found")
+		return "", ErrAccessDenied
 	}
 	if !constantTimeCompare(pass, ud.Password) {
 		ud = ud.NewData
 	}
 	if ud == nil {
-		return "", fmt.Errorf("JWT: invalid credentials")
+		return "", ErrAccessDenied
 	}
 	if ud.Exp == 0 {
 		ud.Exp = 60
 	}
 	claims["exp"] = time.Now().Add(time.Minute * time.Duration(ud.Exp)).Unix()
 	token.Claims = claims
-	return token.SignedString([]byte(ud.Secret))
+	signed, err := token.SignedString([]byte(ud.Secret))
+	if err != nil {
+		return "", ErrAccessDenied
+	}
+	return signed, nil
 }
 
 func (j *JWT) Authenticate(user string, token string) (string, error) {
@@ -83,18 +90,18 @@ func (j *JWT) Authenticate(user string, token string) (string, error) {
 		parser := jwt.NewParser()
 		_, _, err := parser.ParseUnverified(token, claims)
 		if err != nil {
-			return "", fmt.Errorf("JWT: %w", err)
+			return "", ErrAccessDenied
 		}
 		if u, ok := claims["user"].(string); ok {
 			user = u
 		} else {
-			return "", fmt.Errorf("JWT: missing user claim")
+			return "", ErrAccessDenied
 		}
 	}
 
 	ud, ok := j.GetUserData(user)
 	if !ok {
-		return "", fmt.Errorf("JWT: user not found")
+		return "", ErrAccessDenied
 	}
 
 	tok, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
@@ -106,24 +113,24 @@ func (j *JWT) Authenticate(user string, token string) (string, error) {
 				return []byte(ud.NewData.Secret), nil
 			})
 			if err != nil {
-				return "", err
+				return "", ErrAccessDenied
 			}
 		} else {
-			return "", err
+			return "", ErrAccessDenied
 		}
 	}
 
 	if tu := tok.Claims.(jwt.MapClaims)["user"]; tu != nil {
 		if tu.(string) != user {
-			return "", fmt.Errorf("JWT: token user mismatch")
+			return "", ErrAccessDenied
 		}
 	} else {
-		return "", fmt.Errorf("JWT: invalid token")
+		return "", ErrAccessDenied
 	}
 	if _, ok := tok.Claims.(jwt.MapClaims); ok && tok.Valid {
 		return tok.Claims.(jwt.MapClaims)["user"].(string), nil
 	}
-	return "", fmt.Errorf("JWT: invalid token")
+	return "", ErrAccessDenied
 }
 
 func (j *JWT) CheckUpdateNewCred(log logger.Logger) error {
@@ -243,8 +250,9 @@ func validateSecretAndPass(secret []string) error {
 
 type jwtContextKey struct{}
 
-func JWTAuthMiddleware(j *JWT, exempt []string, next http.Handler) http.Handler {
+func JWTAuthMiddleware(j *JWT, exempt []string, next http.Handler, log logger.Logger) http.Handler {
 	if j == nil {
+		_ = log
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -266,8 +274,9 @@ func JWTAuthMiddleware(j *JWT, exempt []string, next http.Handler) http.Handler 
 		user := r.Header.Get("username")
 		u, err := j.Authenticate(user, token)
 		if err != nil {
+			log.Warnf("JWT: auth failed for user %q from %s: %v", user, r.RemoteAddr, err)
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(err.Error()))
+			w.Write([]byte("Access denied"))
 			return
 		}
 		ctx := context.WithValue(r.Context(), jwtContextKey{}, u)
@@ -280,7 +289,7 @@ func JWTUser(ctx context.Context) (string, bool) {
 	return u, ok
 }
 
-func LoginHandler(j *JWT) http.HandlerFunc {
+func LoginHandler(j *JWT, log logger.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := r.Header.Get("username")
 		pass := r.Header.Get("password")
@@ -292,6 +301,7 @@ func LoginHandler(j *JWT) http.HandlerFunc {
 
 		ud, ok := j.GetUserData(user)
 		if !ok {
+			log.Warnf("JWT: login failed, unknown user %q from %s", user, r.RemoteAddr)
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte("Access denied"))
 			return
@@ -299,11 +309,13 @@ func LoginHandler(j *JWT) http.HandlerFunc {
 		if !constantTimeCompare(ud.Password, pass) {
 			if ud.NewData != nil {
 				if !constantTimeCompare(ud.NewData.Password, pass) {
+					log.Warnf("JWT: login failed, invalid password for user %q from %s", user, r.RemoteAddr)
 					w.WriteHeader(http.StatusUnauthorized)
 					w.Write([]byte("Access denied"))
 					return
 				}
 			} else {
+				log.Warnf("JWT: login failed, invalid password for user %q from %s", user, r.RemoteAddr)
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte("Access denied"))
 				return
@@ -312,8 +324,9 @@ func LoginHandler(j *JWT) http.HandlerFunc {
 
 		token, err := j.GenerateToken(user, pass)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
+			log.Errorf("JWT: token generation failed for user %q from %s: %v", user, r.RemoteAddr, err)
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte("Access denied"))
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
