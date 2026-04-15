@@ -38,12 +38,27 @@ func (s *httpSvc) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
 }
 
-func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpointURL string, h *rpc.Handler, log logger.Logger, g utils.GlobalOptions) (Service, error) {
+type Option func(*options)
+
+type options struct {
+	httpMiddleware func(http.Handler) http.Handler
+}
+
+func WithHTTPMiddleware(m func(http.Handler) http.Handler) Option {
+	return func(o *options) { o.httpMiddleware = m }
+}
+
+func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpointURL string, h *rpc.Handler, log logger.Logger, g utils.GlobalOptions, opts ...Option) (Service, error) {
 	u, err := url.Parse(endpointURL)
 	if err != nil {
 		return nil, err
 	}
 	l := log.With("address", u.Host)
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	l.Debug("Registered methods:")
 	for p, mt := range h.Modules {
 		for m := range mt {
@@ -97,9 +112,13 @@ func NewRPCService[E rpc.Layout[C, M], M rpc.Message[C], C codec.Codec](endpoint
 		}, nil
 
 	case "http":
+		var handler http.Handler = rpc.NewHTTPHandler[E](h)
+		if o.httpMiddleware != nil {
+			handler = o.httpMiddleware(handler)
+		}
 		srv := http.Server{
 			Addr:    u.Host,
-			Handler: rpc.NewHTTPHandler[E](h),
+			Handler: handler,
 			// TODO: TLS
 		}
 		go func() {
